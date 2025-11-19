@@ -1,0 +1,13 @@
+objectType,objectId,objectName,linesCovered,linesNotCovered
+Codeunit,50100,Hello World Test,45,5
+Codeunit,50101,Helper Functions,120,30
+Codeunit,50102,Data Manager,200,50
+Page,50100,Hello World,25,10
+Page,50101,Configuration Page,40,15
+Table,50100,Configuration,15,2
+Table,50101,Log Entries,80,20
+TableExtension,50100,Customer Extension,30,5
+PageExtension,50100,Sales Order Extension,20,8
+Query,50100,Sales Statistics,10,0
+Report,50100,Sales Report,60,25
+XmlPort,50100,Data Import,35,15

@@ -1,0 +1,11 @@
+echo "Running pre-commit checks..."
+
+# Run TypeScript type checking
+echo "Type checking..."
+npm run typecheck
+
+# Run ESLint
+echo "Linting..."
+npm run lint
+
+echo "Pre-commit checks passed!"

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="5" failures="1" errors="0" skipped="1" time="12.345">
+  <testsuite name="Hello World Tests" tests="3" failures="0" errors="0" skipped="0" time="5.123" timestamp="2024-01-15T10:30:00Z">
+    <testcase name="TestWelcomeMessage" classname="HelloWorld.Test" time="1.234">
+      <system-out>Test passed successfully</system-out>
+    </testcase>
+    <testcase name="TestDateTimeIsSet" classname="HelloWorld.Test" time="2.345">
+      <system-out>Test passed successfully</system-out>
+    </testcase>
+    <testcase name="TestMessageDisplay" classname="HelloWorld.Test" time="1.544">
+      <system-out>Test passed successfully</system-out>
+    </testcase>
+  </testsuite>
+
+  <testsuite name="Integration Tests" tests="2" failures="1" errors="0" skipped="1" time="7.222" timestamp="2024-01-15T10:30:05Z">
+    <testcase name="TestDatabaseConnection" classname="Integration.Test" time="3.111">
+      <system-out>Test passed successfully</system-out>
+    </testcase>
+    <testcase name="TestApiIntegration" classname="Integration.Test" time="4.111">
+      <failure message="API returned 404" type="AssertionError">
+        Expected status code 200 but got 404
+        API endpoint: /api/v1/users
+        Stack trace:
+          at TestApiIntegration (Integration.Test.al:45)
+          at RunTest (TestRunner.al:123)
+      </failure>
+    </testcase>
+  </testsuite>
+
+  <testsuite name="Performance Tests" tests="1" failures="0" errors="0" skipped="1" time="0.000" timestamp="2024-01-15T10:30:12Z">
+    <testcase name="TestLoadTime" classname="Performance.Test" time="0.000">
+      <skipped message="Performance tests disabled in CI environment" />
+    </testcase>
+  </testsuite>
+</testsuites>

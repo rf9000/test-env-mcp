@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "api": {
+    "url": "https://demoportaldev.continiaonline.com/api/v1.0",
+    "timeoutMs": 30000
+  },
+  "test": {
+    "defaultTimeoutSeconds": 600,
+    "initialPollIntervalMs": 2000,
+    "maxPollIntervalMs": 30000,
+    "backoffFactor": 2
+  },
+  "logging": {
+    "level": "info",
+    "format": "json"
+  },
+  "auth": {
+    "devTenant": "default",
+    "allowInsecureCertificates": false,
+    "interactivePrompts": false
+  },
+  "environment": {
+    "defaultAuthMethod": "NavUserPassword"
+  }
+}
