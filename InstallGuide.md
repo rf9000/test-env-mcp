@@ -8,7 +8,7 @@ The Continia Environment MCP (Model Context Protocol) server enables AI assistan
 Before installing, ensure you have:
 - **Node.js** v18 or higher installed ([Download Node.js](https://nodejs.org/))
 - **Claude Desktop** application ([Download Claude](https://claude.ai/download))
-- **Continia Account** with valid credentials
+- **Continia Demo Portal API Token** (obtain from your Continia account)
 - **Internet connection** (required for npx to download the package)
 
 ## Quick Setup (2 Minutes)
@@ -31,8 +31,7 @@ Before installing, ensure you have:
       "command": "npx",
       "args": ["github:rf9000/test-env-mcp"],
       "env": {
-        "CONTINIA_USERNAME": "your-username",
-        "CONTINIA_PASSWORD": "your-password"
+        "DEMO_PORTAL_TOKEN": "your-api-token-here"
       }
     }
   }
@@ -40,7 +39,9 @@ Before installing, ensure you have:
 ```
 
 **Important:**
-- Replace `your-username` and `your-password` with your actual Continia credentials
+- Replace `your-api-token-here` with your actual Continia Demo Portal API token
+- The API token is used to authenticate with the Demo Portal
+- Business Central user credentials are fetched automatically from the API
 - Ensure proper JSON formatting (watch for trailing commas)
 
 ### Step 2: Restart Claude Desktop
@@ -82,36 +83,64 @@ npm install github:rf9000/test-env-mcp
       "args": ["./node_modules/test-env-mcp/dist/index.js"],
       "cwd": "C:\\path\\to\\continia-mcp",
       "env": {
-        "CONTINIA_USERNAME": "your-username",
-        "CONTINIA_PASSWORD": "your-password"
+        "DEMO_PORTAL_TOKEN": "your-api-token-here"
       }
     }
   }
 }
 ```
 
-Replace `C:\\path\\to\\continia-mcp` with your actual installation path.
+Replace `C:\\path\\to\\continia-mcp` with your actual installation path and `your-api-token-here` with your actual API token.
 
 ## Configuration Options
 
+### API Endpoint Configuration
+
+The MCP server connects to the Continia Demo Portal API with these options:
+
+**Default Endpoint (Production)**
+- URL: `https://demoportaldev.continiaonline.com/api/v1.0`
+- This is hardcoded as the default - no configuration needed for standard use
+
+**Custom Endpoint (Optional)**
+- Set `DEMO_PORTAL_BASE_URL` in your configuration to override the default
+- Use cases:
+  - Connecting to a test/staging Demo Portal instance
+  - Using an on-premises Demo Portal deployment
+  - Development and testing scenarios
+
+Example with custom endpoint:
+```json
+{
+  "mcpServers": {
+    "continia-env": {
+      "command": "npx",
+      "args": ["github:rf9000/test-env-mcp"],
+      "env": {
+        "DEMO_PORTAL_TOKEN": "your-api-token-here",
+        "DEMO_PORTAL_BASE_URL": "https://staging.demoportal.com/api/v1.0"
+      }
+    }
+  }
+}
+```
+
 ### Using Environment Variables
 
-Instead of hardcoding credentials in the config file, you can use system environment variables:
+Instead of hardcoding the API token in the config file, you can use system environment variables:
 
 **Windows (PowerShell):**
 ```powershell
-[Environment]::SetEnvironmentVariable("CONTINIA_USERNAME", "your-username", "User")
-[Environment]::SetEnvironmentVariable("CONTINIA_PASSWORD", "your-password", "User")
+[Environment]::SetEnvironmentVariable("DEMO_PORTAL_TOKEN", "your-api-token", "User")
 ```
 
 **Mac/Linux:**
 Add to `~/.bashrc` or `~/.zshrc`:
 ```bash
-export CONTINIA_USERNAME="your-username"
-export CONTINIA_PASSWORD="your-password"
+export DEMO_PORTAL_TOKEN="your-api-token"
 ```
 
-Then in your config, simply omit the credentials:
+Then in your config, simply omit the token:
 ```json
 {
   "mcpServers": {
@@ -132,9 +161,8 @@ Then in your config, simply omit the credentials:
       "command": "npx",
       "args": ["github:rf9000/test-env-mcp"],
       "env": {
-        "CONTINIA_USERNAME": "your-username",
-        "CONTINIA_PASSWORD": "your-password",
-        "CONTINIA_API_URL": "https://api.continia.com",  // Optional: Custom API endpoint
+        "DEMO_PORTAL_TOKEN": "your-api-token-here",
+        "DEMO_PORTAL_BASE_URL": "https://custom-api.com/api/v1.0",  // Optional: Override default API endpoint
         "LOG_LEVEL": "debug",  // Optional: Enable debug logging
         "NODE_ENV": "production"  // Optional: Environment setting
       }
@@ -142,6 +170,8 @@ Then in your config, simply omit the credentials:
   }
 }
 ```
+
+**Note:** The default base URL is `https://demoportaldev.continiaonline.com/api/v1.0`. Only set `DEMO_PORTAL_BASE_URL` if you need to connect to a different Demo Portal instance.
 
 ## Troubleshooting
 
@@ -156,14 +186,15 @@ Then in your config, simply omit the credentials:
 
 ### Authentication Errors
 
-**Problem:** "Invalid credentials" error
+**Problem:** "DEMO_PORTAL_TOKEN not set" or authentication failure
 **Solutions:**
-1. Verify username and password are correct
-2. Check for special characters in credentials that need JSON escaping:
+1. Verify your API token is correct and valid
+2. Obtain a fresh token from the Continia Demo Portal settings page
+3. Check for special characters in the token that need JSON escaping:
    - `"` → `\"`
    - `\` → `\\`
-3. Ensure no trailing spaces in credentials
-4. Test credentials directly on Continia website
+4. Ensure no trailing spaces in the token
+5. Test the token by accessing the Demo Portal API directly
 
 ### NPX Download Issues
 
@@ -181,6 +212,17 @@ Then in your config, simply omit the credentials:
 1. This is normal - npx downloads the package on first run
 2. Subsequent runs use cached version (faster)
 3. Consider local installation for faster startup
+
+## How Authentication Works
+
+The MCP server uses a streamlined authentication flow:
+
+1. **API Token Authentication**: Your `DEMO_PORTAL_TOKEN` authenticates with the Demo Portal API
+2. **Automatic User Retrieval**: The API returns available Business Central users for each environment
+3. **Automatic User Selection**: The MCP server automatically selects the appropriate user for operations
+4. **No Manual Credentials**: You don't need to configure Business Central usernames or passwords
+
+This means you only need to provide the API token - all other credentials are handled automatically.
 
 ## Available Tools
 
