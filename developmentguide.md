@@ -33,7 +33,22 @@ This guide provides comprehensive implementation details for the Continia Enviro
 - Poll: `GET /environments/{id}/tests/jobs/{jobId}.xml` (404 = pending, 200 = complete)
 - Coverage: `GET /environments/{id}/tests/jobs/{jobId}/codecoverage.csv`
 
-**IMPORTANT - Test Job Response Handling:**
+**IMPORTANT - Test Job Parameter Names:**
+The API expects specific field names for test filtering:
+- **Codeunit Filter**: Use `testCodeunitId` (primary) and `codeunitId` (fallback)
+- **Method Filter**: Use `testMethod` (primary) and `testName` (fallback)
+
+The implementation sends both field names for backward compatibility:
+```json
+{
+  "testCodeunitId": 95998,  // Primary field name (AL Test Runner standard)
+  "codeunitId": 95998,       // Fallback for older API versions
+  "testMethod": "MyTestMethod",
+  "testName": "MyTestMethod"
+}
+```
+
+**Test Job Response Handling:**
 The Demo Portal API may return the job ID in various formats. The implementation handles:
 - Standard format: `{ jobId: 12345 }`
 - Snake case: `{ job_id: 12345 }`
@@ -42,7 +57,7 @@ The Demo Portal API may return the job ID in various formats. The implementation
 - Nested structures: `{ job: { id: 12345 } }`
 - Result wrapper: `{ result: { jobId: 12345 } }`
 
-Debug logging is included to identify the actual response format if issues occur.
+Debug logging is included to identify the actual response format and parameters sent if issues occur.
 
 **AL Compilation:**
 - Use `al compile` command (not `alc.exe` directly)
@@ -1951,13 +1966,34 @@ test-env-mcp/
 }
 ```
 
-#### Test Codeunit Not Found
-**Cause:** The specified codeunit doesn't exist on the environment.
+#### Test Codeunit Returns 0 Tests
+**Cause:** The test job succeeds but finds no tests for the specified codeunit.
 
 **Solution:**
-1. Verify the codeunit ID is correct
-2. Check that the app containing the test codeunit is published to the environment
-3. Ensure the environment is in Running state
+1. **Verify codeunit exists and is a test codeunit:**
+   - Check that the codeunit exists in the environment
+   - Ensure `Subtype = Test` is set in the codeunit
+   - Verify test methods have `[Test]` attribute
+
+2. **Check field name compatibility:**
+   - The MCP server now sends both `testCodeunitId` and `codeunitId`
+   - Enable debug logging to see exact parameters sent: `LOG_LEVEL=debug`
+
+3. **Test without filter first:**
+   ```json
+   {
+     "environmentId": "your-env-id"
+   }
+   ```
+   If this returns tests, the issue is with the codeunit filter.
+
+4. **Try a known test codeunit:**
+   - Standard BC test codeunits are in the 130000-139999 range
+   - Example: codeunit 130001 (if standard tests are installed)
+
+5. **Check debug logs for warnings:**
+   - The service logs warnings when no tests are found
+   - Look for "No tests found for specified codeunit" messages
 
 ### Environment Management Issues
 

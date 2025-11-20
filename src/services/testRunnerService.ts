@@ -16,6 +16,7 @@ import { parse as parseCsv } from 'csv-parse/sync';
 import type { DemoPortalClient } from '@/api/demoPortalClient.js';
 import type { ConfigurationService } from '@/services/configurationService.js';
 import { NotFoundError, TimeoutError } from '@/errors/errors.js';
+import { Logger } from '@/utils/logger.js';
 
 /**
  * Parameters for running tests
@@ -106,6 +107,7 @@ export interface CoverageObject {
  */
 export class TestRunnerService {
   private xmlParser: XMLParser;
+  private logger: Logger;
 
   constructor(
     // eslint-disable-next-line no-unused-vars
@@ -120,6 +122,9 @@ export class TestRunnerService {
       allowBooleanAttributes: true,
       parseAttributeValue: true
     });
+
+    // Initialize logger
+    this.logger = Logger.getInstance();
   }
 
   /**
@@ -138,14 +143,42 @@ export class TestRunnerService {
     const signal = params.signal ?? AbortSignal.timeout(timeoutMs);
 
     // Submit test job
+    // Build test parameters with both field names for compatibility
+    const testParams: Record<string, unknown> = {};
+
+    // Use testCodeunitId as primary field name (matches AL Test Runner reference)
+    // Also include codeunitId for backward compatibility
+    if (params.codeunitId !== undefined) {
+      testParams.testCodeunitId = params.codeunitId;
+      testParams.codeunitId = params.codeunitId; // Fallback for older API versions
+    }
+
+    if (params.testMethod) {
+      testParams.testMethod = params.testMethod;
+      testParams.testName = params.testMethod; // Alternative field name
+    }
+
+    this.logger.debug('Submitting test job with parameters', {
+      details: {
+        environmentId: params.environmentId,
+        testParams
+      }
+    });
+
     const { jobId } = await this.demoPortalClient.createTestJob(
       params.environmentId,
-      {
-        codeunitId: params.codeunitId,
-        testMethod: params.testMethod
-      },
+      testParams,
       { signal }
     );
+
+    this.logger.info('Test job created successfully', {
+      details: {
+        jobId,
+        environmentId: params.environmentId,
+        codeunitId: params.codeunitId,
+        testMethod: params.testMethod
+      }
+    });
 
     // Poll for completion
     const result = await this.pollForResults(
@@ -158,6 +191,33 @@ export class TestRunnerService {
 
     // Parse XML results
     const summary = this.parseTestResults(result.xml);
+
+    // Log warning if no tests found despite filtering
+    if (summary.total === 0 && params.codeunitId !== undefined) {
+      this.logger.warn('No tests found for specified codeunit', {
+        details: {
+          codeunitId: params.codeunitId,
+          testMethod: params.testMethod,
+          jobId,
+          message: 'The test job completed but found no tests to execute. Possible causes: ' +
+                   '1) The codeunit does not exist in the environment, ' +
+                   '2) The codeunit is not a test codeunit (missing Subtype = Test), ' +
+                   '3) The codeunit has no test methods (missing [Test] attribute), ' +
+                   '4) The API might not be applying the codeunit filter correctly'
+        }
+      });
+    } else if (summary.total > 0) {
+      this.logger.info('Test execution completed', {
+        details: {
+          jobId,
+          totalTests: summary.total,
+          passed: summary.passed,
+          failed: summary.failed,
+          skipped: summary.skipped,
+          duration: summary.durationSec
+        }
+      });
+    }
 
     // Optionally fetch coverage
     let coverage: CoverageSummary | undefined;

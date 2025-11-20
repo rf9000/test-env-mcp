@@ -1,5 +1,6 @@
 import type { AxiosInstance } from 'axios';
 import { NotFoundError } from '../errors/errors.js';
+import { Logger } from '../utils/logger.js';
 
 /**
  * Client for interacting with the Continia Demo Portal API
@@ -12,7 +13,12 @@ import { NotFoundError } from '../errors/errors.js';
  * All methods return raw API responses for transformation by service layer.
  */
 export class DemoPortalClient {
-  constructor(private readonly httpClient: AxiosInstance) {}
+  private readonly logger: Logger;
+
+  constructor(private readonly httpClient: AxiosInstance) {
+    // httpClient is used throughout the class methods
+    this.logger = Logger.getInstance();
+  }
 
   /**
    * Get the base URL for this client (for logging/debugging)
@@ -203,13 +209,15 @@ export class DemoPortalClient {
       );
 
       // DEBUG: Log the actual response for troubleshooting
-      console.log('[DEBUG] Test job creation response:', JSON.stringify({
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers,
-        data: response.data,
-        dataType: typeof response.data
-      }, null, 2));
+      this.logger.debug('test_job_creation_response', {
+        details: {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+          data: response.data,
+          dataType: typeof response.data
+        }
+      });
 
       // Handle various possible response formats
       let jobIdValue: string | number | undefined;
@@ -262,7 +270,12 @@ export class DemoPortalClient {
         );
       }
 
-      console.log(`[DEBUG] Found job ID: ${jobIdValue} (type: ${typeof jobIdValue})`);
+      this.logger.debug('found_job_id', {
+        details: {
+          jobId: jobIdValue,
+          jobIdType: typeof jobIdValue
+        }
+      });
 
       return {
         jobId: String(jobIdValue)

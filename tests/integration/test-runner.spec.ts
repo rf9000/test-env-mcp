@@ -319,6 +319,78 @@ describe('Test Runner Integration Tests', () => {
     });
   });
 
+  describe('test parameter field names', () => {
+    it('should send both testCodeunitId and codeunitId for compatibility', async () => {
+      if (SKIP_INTEGRATION) return;
+
+      const httpClient = createClientFromConfig(ConfigurationService.getInstance());
+      const testClient = new DemoPortalClient(httpClient);
+
+      // Mock the post method to capture the request
+      const originalPost = httpClient.post;
+      let capturedParams: any = null;
+
+      httpClient.post = vi.fn().mockImplementation((url, params) => {
+        capturedParams = params;
+        return Promise.resolve({
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          data: { jobId: 999 },
+          config: {} as any
+        } as AxiosResponse);
+      });
+
+      // Create test runner service and run tests with codeunitId
+      const testService = new TestRunnerService(testClient, ConfigurationService.getInstance());
+
+      // This should trigger the createTestJob call
+      await testClient.createTestJob('test-env', {
+        testCodeunitId: 95998,
+        codeunitId: 95998
+      });
+
+      // Verify both field names were sent
+      expect(capturedParams).toBeDefined();
+      expect(capturedParams.testCodeunitId).toBe(95998);
+      expect(capturedParams.codeunitId).toBe(95998);
+
+      httpClient.post = originalPost;
+    });
+
+    it('should send both testMethod and testName for method filtering', async () => {
+      if (SKIP_INTEGRATION) return;
+
+      const httpClient = createClientFromConfig(ConfigurationService.getInstance());
+      const testClient = new DemoPortalClient(httpClient);
+
+      const originalPost = httpClient.post;
+      let capturedParams: any = null;
+
+      httpClient.post = vi.fn().mockImplementation((url, params) => {
+        capturedParams = params;
+        return Promise.resolve({
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          data: { jobId: 999 },
+          config: {} as any
+        } as AxiosResponse);
+      });
+
+      await testClient.createTestJob('test-env', {
+        testMethod: 'MyTest',
+        testName: 'MyTest'
+      });
+
+      expect(capturedParams).toBeDefined();
+      expect(capturedParams.testMethod).toBe('MyTest');
+      expect(capturedParams.testName).toBe('MyTest');
+
+      httpClient.post = originalPost;
+    });
+  });
+
   describe('run_tests with real environment (if configured)', () => {
     it('should attempt to run a test on real environment', async () => {
       if (SKIP_INTEGRATION) return;
