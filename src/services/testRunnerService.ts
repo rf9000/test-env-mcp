@@ -143,24 +143,59 @@ export class TestRunnerService {
     const signal = params.signal ?? AbortSignal.timeout(timeoutMs);
 
     // Submit test job
-    // Build test parameters with both field names for compatibility
+    // Build test parameters - try multiple format combinations
     const testParams: Record<string, unknown> = {};
 
-    // Use testCodeunitId as primary field name (matches AL Test Runner reference)
-    // Also include codeunitId for backward compatibility
+    // Try multiple field name variations for codeunit filtering
     if (params.codeunitId !== undefined) {
-      testParams.testCodeunitId = params.codeunitId;
-      testParams.codeunitId = params.codeunitId; // Fallback for older API versions
+      // Check if we're in diagnostic mode with minimal parameters
+      const diagnosticMode = process.env.TEST_MINIMAL_PARAMS === 'true';
+
+      if (diagnosticMode) {
+        // Try with just ONE parameter to isolate the issue
+        this.logger.info('Running in minimal parameter mode for diagnostics');
+        testParams.codeunitId = params.codeunitId;
+      } else {
+        // Normal mode - try multiple variations
+        // Primary formats based on AL Test Runner
+        testParams.testCodeunitId = params.codeunitId;
+        testParams.codeunitId = params.codeunitId;
+
+        // Additional variations to test
+        testParams.codeunit = params.codeunitId;
+        testParams.testCodeunit = params.codeunitId;
+        testParams.codeunitNo = params.codeunitId;
+
+        // Try as string as well (some APIs are sensitive to type)
+        testParams.testCodeunitIdString = String(params.codeunitId);
+
+        // Try exact casing variations
+        testParams.TestCodeunitId = params.codeunitId;
+        testParams.CodeunitId = params.codeunitId;
+      }
     }
 
     if (params.testMethod) {
+      // Primary formats
       testParams.testMethod = params.testMethod;
-      testParams.testName = params.testMethod; // Alternative field name
+      testParams.testName = params.testMethod;
+
+      // Additional variations
+      testParams.testFunction = params.testMethod;
+      testParams.testFunctionName = params.testMethod;
+      testParams.methodName = params.testMethod;
+
+      // Casing variations
+      testParams.TestMethod = params.testMethod;
+      testParams.TestName = params.testMethod;
     }
 
-    this.logger.debug('Submitting test job with parameters', {
+    this.logger.info('Testing with multiple parameter formats', {
       details: {
         environmentId: params.environmentId,
+        originalCodeunitId: params.codeunitId,
+        originalTestMethod: params.testMethod,
+        parameterCount: Object.keys(testParams).length,
         testParams
       }
     });
@@ -250,6 +285,120 @@ export class TestRunnerService {
       coverage,
       fetchedAt: new Date().toISOString()
     };
+  }
+
+  /**
+   * Diagnostic method to troubleshoot test execution issues
+   * Runs tests without filters and with various parameter combinations
+   */
+  async runTestDiagnostics(
+    environmentId: string,
+    codeunitId?: number
+  ): Promise<{
+    withoutFilter: RunTestsResult;
+    withFilter?: RunTestsResult;
+    analysis: Record<string, unknown>;
+  }> {
+    const diagnosticResults: any = {
+      analysis: {
+        environmentId,
+        requestedCodeunitId: codeunitId,
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    this.logger.info('Starting test diagnostics', {
+      details: { environmentId, codeunitId }
+    });
+
+    try {
+      // Step 1: Run without any filter to see all available tests
+      this.logger.info('Step 1: Running tests WITHOUT any filter');
+      const withoutFilter = await this.runTests({
+        environmentId,
+        timeoutSeconds: 60
+      });
+
+      diagnosticResults.withoutFilter = withoutFilter;
+      diagnosticResults.analysis.totalTestsAvailable = withoutFilter.summary.total;
+      diagnosticResults.analysis.testsFound = withoutFilter.summary.total > 0;
+
+      // Analyze the XML to find available codeunits
+      if (withoutFilter.summary.total > 0) {
+        this.logger.info('Tests found without filter', {
+          details: {
+            total: withoutFilter.summary.total,
+            passed: withoutFilter.summary.passed,
+            failed: withoutFilter.summary.failed
+          }
+        });
+      } else {
+        this.logger.warn('NO tests found even without filter!', {
+          details: {
+            message: 'This suggests no test codeunits are available in the environment'
+          }
+        });
+      }
+
+      // Step 2: If a codeunit was specified, try with filter
+      if (codeunitId !== undefined) {
+        this.logger.info('Step 2: Running tests WITH codeunit filter', {
+          details: { codeunitId }
+        });
+
+        try {
+          const withFilter = await this.runTests({
+            environmentId,
+            codeunitId,
+            timeoutSeconds: 60
+          });
+
+          diagnosticResults.withFilter = withFilter;
+          diagnosticResults.analysis.filterWorking = withFilter.summary.total > 0;
+          diagnosticResults.analysis.testsFoundWithFilter = withFilter.summary.total;
+
+          if (withFilter.summary.total === 0) {
+            this.logger.warn('Filter returned 0 tests', {
+              details: {
+                codeunitId,
+                message: 'The filter is not working or the codeunit has no tests'
+              }
+            });
+          }
+        } catch (error) {
+          diagnosticResults.analysis.filterError = error instanceof Error ? error.message : String(error);
+          this.logger.error('Error running with filter', error as Error, {
+            details: { codeunitId }
+          });
+        }
+      }
+
+      // Step 3: Analysis and recommendations
+      diagnosticResults.analysis.recommendations = this.generateRecommendations(diagnosticResults);
+
+      return diagnosticResults;
+    } catch (error) {
+      this.logger.error('Diagnostic test failed', error as Error);
+      throw error;
+    }
+  }
+
+  private generateRecommendations(diagnosticResults: any): string[] {
+    const recommendations: string[] = [];
+
+    if (diagnosticResults.analysis.totalTestsAvailable === 0) {
+      recommendations.push('No tests available in environment. Ensure test app is published.');
+      recommendations.push('Check if test runner codeunit is installed.');
+      recommendations.push('Verify environment has test suites configured.');
+    } else if (diagnosticResults.withFilter?.summary.total === 0) {
+      recommendations.push(`Codeunit ${diagnosticResults.analysis.requestedCodeunitId} not found or has no tests.`);
+      recommendations.push('Check if codeunit ID is correct.');
+      recommendations.push('Verify codeunit has Subtype = Test.');
+      recommendations.push('Ensure test methods have [Test] attribute.');
+      recommendations.push('The Demo Portal API may not support codeunit filtering.');
+    }
+
+    return recommendations;
   }
 
   /**

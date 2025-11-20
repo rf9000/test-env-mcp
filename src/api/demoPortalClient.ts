@@ -202,20 +202,38 @@ export class DemoPortalClient {
     options?: { signal?: AbortSignal }
   ): Promise<{ jobId: string }> {
     try {
+      // Log the exact request being made
+      const requestUrl = `/environments/${environmentId}/tests/jobs.json`;
+      this.logger.info('Creating test job - API Request', {
+        details: {
+          url: requestUrl,
+          environmentId,
+          requestBody: JSON.stringify(testParams, null, 2),
+          testParams,
+          parameterKeys: Object.keys(testParams),
+          parameterTypes: Object.entries(testParams).reduce((acc, [key, value]) => {
+            acc[key] = typeof value;
+            return acc;
+          }, {} as Record<string, string>)
+        }
+      });
+
       const response = await this.httpClient.post(
-        `/environments/${environmentId}/tests/jobs.json`,
+        requestUrl,
         testParams,
         options?.signal ? { signal: options.signal } : undefined
       );
 
-      // DEBUG: Log the actual response for troubleshooting
-      this.logger.debug('test_job_creation_response', {
+      // Log the actual response for troubleshooting
+      this.logger.info('Test job creation - API Response', {
         details: {
           status: response.status,
           statusText: response.statusText,
           headers: response.headers,
-          data: response.data,
-          dataType: typeof response.data
+          responseData: response.data,
+          responseDataString: JSON.stringify(response.data, null, 2),
+          dataType: typeof response.data,
+          dataKeys: response.data && typeof response.data === 'object' ? Object.keys(response.data) : []
         }
       });
 

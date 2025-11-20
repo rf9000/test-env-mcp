@@ -65,6 +65,7 @@ import {
   compileAndPublishToolDefinition,
   executeCompileAndPublish
 } from './tools/compileAndPublish.js';
+import { DiagnoseTestsTool } from './tools/diagnoseTests.js';
 
 /**
  * Main server initialization and setup
@@ -175,6 +176,32 @@ async function main(): Promise<void> {
     const credentialsService = new CredentialsService(demoPortalClient, config);
     const devEndpointClient = new DeveloperEndpointClient(credentialsService);
     const compilationService = new CompilationService(demoPortalClient, devEndpointClient);
+    const diagnoseTestsTool = new DiagnoseTestsTool(testRunnerService);
+
+    // Create diagnostic tool definition
+    const diagnoseTestsToolDefinition = {
+      name: 'diagnose_tests',
+      description: 'Diagnose why tests are not running or returning 0 results. Runs tests with and without filters to identify issues.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          environmentId: {
+            type: 'string',
+            description: 'The ID of the environment to diagnose'
+          },
+          codeunitId: {
+            type: 'number',
+            description: 'Optional codeunit ID to test filtering'
+          },
+          verbose: {
+            type: 'boolean',
+            description: 'Include detailed API logs',
+            default: true
+          }
+        },
+        required: ['environmentId']
+      }
+    };
 
     // Create MCP server
     const server = new Server(
@@ -200,7 +227,8 @@ async function main(): Promise<void> {
           startEnvironmentTool,
           stopEnvironmentTool,
           runTestsToolDefinition,
-          compileAndPublishToolDefinition
+          compileAndPublishToolDefinition,
+          diagnoseTestsToolDefinition
         ]
       };
     });
@@ -258,6 +286,10 @@ async function main(): Promise<void> {
               compilationService,
               (args || {}) as never
             );
+            break;
+
+          case 'diagnose_tests':
+            result = await diagnoseTestsTool.execute(args || {});
             break;
 
           default:

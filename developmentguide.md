@@ -1946,6 +1946,45 @@ test-env-mcp/
 
 ## Troubleshooting
 
+### Test Execution Debugging
+
+#### Using the Diagnostic Tool
+
+The MCP server includes a `diagnose_tests` tool that helps identify why tests might not be running:
+
+```json
+{
+  "tool": "diagnose_tests",
+  "arguments": {
+    "environmentId": "your-env-id",
+    "codeunitId": 95998,
+    "verbose": true
+  }
+}
+```
+
+This tool will:
+1. Run tests WITHOUT any filter to see all available tests
+2. Run tests WITH your codeunit filter to compare results
+3. Show exact API parameters being sent
+4. Provide analysis and recommendations
+
+#### Debug Modes
+
+**Verbose Logging:**
+Set `LOG_LEVEL=debug` to see detailed API request/response logs.
+
+**Minimal Parameters Mode:**
+Set `TEST_MINIMAL_PARAMS=true` to send only one parameter field instead of multiple variations.
+
+#### API Parameter Debugging
+
+The MCP server now logs:
+- Exact request body sent to the API
+- All parameter field names and types
+- Complete response data and structure
+- Helpful warnings when no tests are found
+
 ### Test Execution Errors
 
 #### "Expected jobId in response from test job creation"
