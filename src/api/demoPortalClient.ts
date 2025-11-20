@@ -202,13 +202,70 @@ export class DemoPortalClient {
         options?.signal ? { signal: options.signal } : undefined
       );
 
-      // API returns object with numeric jobId
-      if (!response.data || typeof response.data.jobId === 'undefined') {
-        throw new Error('Expected jobId in response from test job creation');
+      // DEBUG: Log the actual response for troubleshooting
+      console.log('[DEBUG] Test job creation response:', JSON.stringify({
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+        data: response.data,
+        dataType: typeof response.data
+      }, null, 2));
+
+      // Handle various possible response formats
+      let jobIdValue: string | number | undefined;
+
+      if (!response.data) {
+        throw new Error(
+          `Empty response from test job creation. ` +
+          `Status: ${response.status}, StatusText: ${response.statusText}`
+        );
       }
 
+      // Check if response is directly the job ID (number or string)
+      if (typeof response.data === 'number' || typeof response.data === 'string') {
+        jobIdValue = response.data;
+      }
+      // Check for various field name possibilities in object response
+      else if (typeof response.data === 'object') {
+        // Try different field name variations
+        jobIdValue = response.data.jobId ??
+                    response.data.job_id ??
+                    response.data.JobId ??
+                    response.data.id ??
+                    response.data.Id ??
+                    response.data.ID;
+
+        // Check for nested structures
+        if (!jobIdValue && response.data.job && typeof response.data.job === 'object') {
+          jobIdValue = response.data.job.id ?? response.data.job.Id ?? response.data.job.ID;
+        }
+
+        // Check if response contains a result field
+        if (!jobIdValue && response.data.result) {
+          if (typeof response.data.result === 'number' || typeof response.data.result === 'string') {
+            jobIdValue = response.data.result;
+          } else if (typeof response.data.result === 'object') {
+            jobIdValue = response.data.result.jobId ??
+                        response.data.result.job_id ??
+                        response.data.result.id;
+          }
+        }
+      }
+
+      // Validate that we found a job ID
+      if (jobIdValue === undefined || jobIdValue === null || jobIdValue === '') {
+        throw new Error(
+          `Could not find job ID in API response. ` +
+          `Tried fields: jobId, job_id, JobId, id, Id, ID, job.id, result.jobId. ` +
+          `Actual response: ${JSON.stringify(response.data)} ` +
+          `(type: ${typeof response.data})`
+        );
+      }
+
+      console.log(`[DEBUG] Found job ID: ${jobIdValue} (type: ${typeof jobIdValue})`);
+
       return {
-        jobId: String(response.data.jobId)
+        jobId: String(jobIdValue)
       };
     } catch (error: unknown) {
       if (error && typeof error === 'object' && 'response' in error) {

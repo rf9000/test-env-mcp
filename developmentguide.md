@@ -33,6 +33,17 @@ This guide provides comprehensive implementation details for the Continia Enviro
 - Poll: `GET /environments/{id}/tests/jobs/{jobId}.xml` (404 = pending, 200 = complete)
 - Coverage: `GET /environments/{id}/tests/jobs/{jobId}/codecoverage.csv`
 
+**IMPORTANT - Test Job Response Handling:**
+The Demo Portal API may return the job ID in various formats. The implementation handles:
+- Standard format: `{ jobId: 12345 }`
+- Snake case: `{ job_id: 12345 }`
+- Different capitalizations: `{ JobId: 12345 }`, `{ Id: 12345 }`, `{ ID: 12345 }`
+- Direct response: `12345` (number or string)
+- Nested structures: `{ job: { id: 12345 } }`
+- Result wrapper: `{ result: { jobId: 12345 } }`
+
+Debug logging is included to identify the actual response format if issues occur.
+
 **AL Compilation:**
 - Use `al compile` command (not `alc.exe` directly)
 - Always include all three analyzers: CodeCop, AppSourceCop, UICop
@@ -1917,6 +1928,56 @@ test-env-mcp/
    - Comprehensive logging
    - Graceful degradation
    - Timeout handling
+
+## Troubleshooting
+
+### Test Execution Errors
+
+#### "Expected jobId in response from test job creation"
+**Cause:** The Demo Portal API response format doesn't match expectations.
+
+**Solution:**
+1. Check debug logs for actual response format
+2. The flexible response handler should automatically handle most formats
+3. If a new format is encountered, add it to the response handling logic in `demoPortalClient.ts`
+
+**Debug Output Example:**
+```
+[DEBUG] Test job creation response: {
+  "status": 200,
+  "statusText": "OK",
+  "data": { "job_id": 12345 },  // Note: snake_case instead of camelCase
+  "dataType": "object"
+}
+```
+
+#### Test Codeunit Not Found
+**Cause:** The specified codeunit doesn't exist on the environment.
+
+**Solution:**
+1. Verify the codeunit ID is correct
+2. Check that the app containing the test codeunit is published to the environment
+3. Ensure the environment is in Running state
+
+### Environment Management Issues
+
+#### Environment Stuck in Starting/Stopping State
+**Cause:** Environment transitions can take several minutes.
+
+**Solution:**
+1. Use the `wait` option when starting/stopping environments
+2. Default timeout is 5 minutes; increase if needed
+3. Check environment status periodically with `get_environment`
+
+### Authentication Errors
+
+#### "No users found for environment"
+**Cause:** Environment has no NavUserPassword users configured.
+
+**Solution:**
+1. Create a user through the Demo Portal UI
+2. Or use the API: `POST /environments/{id}/users.json`
+3. Ensure authentication method is set to NavUserPassword
 
 ## Conclusion
 
