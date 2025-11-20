@@ -12,8 +12,13 @@
 
 import { z } from 'zod';
 import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { ValidationError } from '../errors/errors.js';
+
+// Get __dirname equivalent for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 /**
  * Configuration schema with validation and defaults
@@ -69,7 +74,7 @@ type DeepPartial<T> = {
 export class ConfigurationService {
   private static instance: ConfigurationService | null = null;
   private config: Config;
-  private apiToken: string;
+  private apiToken: string | null;
 
   private constructor() {
     const { config, token } = this.loadConfiguration();
@@ -104,11 +109,11 @@ export class ConfigurationService {
    * 2. Config file (mcp-config.json if exists)
    * 3. Environment variables (highest priority)
    *
-   * @returns Validated configuration and API token
-   * @throws ValidationError if token is missing or config is invalid
+   * @returns Validated configuration and API token (token may be null)
+   * @throws ValidationError if config is invalid (but not for missing token)
    */
-  private loadConfiguration(): { config: Config; token: string } {
-    // Step 1: Load API token with fallback strategy
+  private loadConfiguration(): { config: Config; token: string | null } {
+    // Step 1: Load API token with fallback strategy (returns null if missing)
     const token = this.loadApiToken();
 
     // Step 2: Load config file if exists
@@ -154,9 +159,9 @@ export class ConfigurationService {
    * 1. VS Code setting (for extension compatibility)
    * 2. DEMO_PORTAL_TOKEN environment variable
    *
-   * @throws ValidationError if token not found
+   * @returns API token or null if not found
    */
-  private loadApiToken(): string {
+  private loadApiToken(): string | null {
     // Try VS Code settings first (for extension compatibility)
     // In MCP context, this would come from MCP settings
     const vsCodeToken = process.env.VSCODE_API_TOKEN;
@@ -166,17 +171,10 @@ export class ConfigurationService {
 
     const token = vsCodeToken || envToken;
 
+    // Return null instead of throwing - allows server to start without token
     if (!token || token.trim().length === 0) {
-      throw new ValidationError(
-        'DEMO_PORTAL_TOKEN not set. Set it via environment variable:\n' +
-        '  export DEMO_PORTAL_TOKEN=your_token_here\n\n' +
-        'Or add it to your .env file:\n' +
-        '  DEMO_PORTAL_TOKEN=your_token_here',
-        {
-          missingVariable: 'DEMO_PORTAL_TOKEN',
-          suggestedActions: ['SetEnvironmentVariable', 'CreateDotEnvFile']
-        }
-      );
+      console.warn('DEMO_PORTAL_TOKEN not set. API operations will fail until token is configured.');
+      return null;
     }
 
     return token.trim();
@@ -279,11 +277,33 @@ export class ConfigurationService {
   }
 
   /**
+   * Check if a valid API token is configured
+   *
+   * @returns true if token is configured, false otherwise
+   */
+  hasValidToken(): boolean {
+    return this.apiToken !== null && this.apiToken.length > 0;
+  }
+
+  /**
    * Get Demo Portal API token
    *
    * @returns Bearer token for Demo Portal API authentication
+   * @throws ValidationError if token is not configured
    */
   getApiToken(): string {
+    if (!this.apiToken) {
+      throw new ValidationError(
+        'DEMO_PORTAL_TOKEN not set. Set it via environment variable:\n' +
+        '  export DEMO_PORTAL_TOKEN=your_token_here\n\n' +
+        'Or add it to your Claude Desktop configuration:\n' +
+        '  "env": { "DEMO_PORTAL_TOKEN": "your_token_here" }',
+        {
+          missingVariable: 'DEMO_PORTAL_TOKEN',
+          suggestedActions: ['SetEnvironmentVariable', 'UpdateClaudeConfig']
+        }
+      );
+    }
     return this.apiToken;
   }
 

@@ -34,8 +34,9 @@ export interface HttpClientConfig {
 
   /**
    * Authentication token (Bearer token format)
+   * Can be null if not configured yet
    */
-  token: string;
+  token: string | null;
 
   /**
    * Request timeout in milliseconds
@@ -95,8 +96,8 @@ export function createHttpClient(config: HttpClientConfig): AxiosInstance {
   // Request interceptor - add authentication and request ID
   client.interceptors.request.use(
     (req) => {
-      // Add Bearer token authentication
-      if (!req.headers.Authorization) {
+      // Add Bearer token authentication if token is available
+      if (!req.headers.Authorization && config.token) {
         req.headers.Authorization = `Bearer ${config.token}`;
       }
 
@@ -248,11 +249,22 @@ export function createHttpClient(config: HttpClientConfig): AxiosInstance {
  * const client = createClientFromConfig(config);
  */
 export function createClientFromConfig(
-  configService: { getApiUrl: () => string; getApiToken: () => string; getConfig: () => { api: { timeoutMs: number } } }
+  configService: { getApiUrl: () => string; getApiToken: () => string; hasValidToken: () => boolean; getConfig: () => { api: { timeoutMs: number } } }
 ): AxiosInstance {
+  // Get token, but don't fail if it's not configured
+  let token: string | null = null;
+  if (configService.hasValidToken()) {
+    try {
+      token = configService.getApiToken();
+    } catch {
+      // Token not configured, will fail on first API call
+      token = null;
+    }
+  }
+
   return createHttpClient({
     baseUrl: configService.getApiUrl(),
-    token: configService.getApiToken(),
+    token: token,
     timeout: configService.getConfig().api.timeoutMs
   });
 }

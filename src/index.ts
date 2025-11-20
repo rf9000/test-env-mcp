@@ -70,6 +70,95 @@ import {
  * Main server initialization and setup
  */
 async function main(): Promise<void> {
+  // Check for diagnostic/test mode
+  const args = process.argv.slice(2);
+
+  if (args.includes('--help') || args.includes('-h')) {
+    console.error('Continia Environment MCP Server');
+    console.error('');
+    console.error('Usage:');
+    console.error('  node dist/index.js          Start MCP server (normal mode)');
+    console.error('  node dist/index.js --test   Run diagnostic test');
+    console.error('  node dist/index.js --version Show version');
+    console.error('  node dist/index.js --help    Show this help message');
+    console.error('');
+    console.error('Environment Variables:');
+    console.error('  DEMO_PORTAL_TOKEN     Required: API token for Demo Portal');
+    console.error('  DEMO_PORTAL_BASE_URL  Optional: Override API endpoint');
+    console.error('  LOG_LEVEL             Optional: debug, info, warn, error');
+    process.exit(0);
+  }
+
+  if (args.includes('--version') || args.includes('-v')) {
+    // Try to read version from package.json
+    try {
+      const { readFileSync } = await import('fs');
+      const { join } = await import('path');
+      const { fileURLToPath } = await import('url');
+      const __dirname = join(fileURLToPath(import.meta.url), '..');
+      const packageJson = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf-8'));
+      console.error(`Continia Environment MCP Server v${packageJson.version}`);
+    } catch {
+      console.error('Continia Environment MCP Server v0.1.0');
+    }
+    process.exit(0);
+  }
+
+  if (args.includes('--test') || args.includes('-t')) {
+    console.error('========================================');
+    console.error('Continia MCP Server - Diagnostic Test');
+    console.error('========================================');
+    console.error('');
+    console.error('System Information:');
+    console.error('  Node Version:', process.version);
+    console.error('  Platform:', process.platform);
+    console.error('  Working Dir:', process.cwd());
+    console.error('');
+
+    console.error('Configuration Check:');
+    try {
+      const config = ConfigurationService.getInstance();
+      console.error('  ✓ Configuration loaded successfully');
+      console.error('  API URL:', config.getApiUrl());
+      console.error('  Token Present:', config.hasValidToken() ? 'Yes' : 'No');
+
+      if (!config.hasValidToken()) {
+        console.error('');
+        console.error('  ⚠ Warning: DEMO_PORTAL_TOKEN not configured');
+        console.error('  Set it in your Claude Desktop config or environment');
+      }
+    } catch (error) {
+      console.error('  ✗ Configuration failed:', error instanceof Error ? error.message : error);
+    }
+
+    console.error('');
+    console.error('Dependencies Check:');
+
+    // Check for critical dependencies
+    const deps = [
+      { name: '@modelcontextprotocol/sdk/server/index.js', display: 'MCP SDK' },
+      { name: 'axios', display: 'Axios' },
+      { name: 'zod', display: 'Zod' },
+      { name: 'fast-xml-parser', display: 'XML Parser' },
+      { name: 'csv-parse', display: 'CSV Parser' }
+    ];
+
+    for (const dep of deps) {
+      try {
+        await import(dep.name);
+        console.error(`  ✓ ${dep.display} installed`);
+      } catch (err) {
+        console.error(`  ✗ ${dep.display} not found`);
+      }
+    }
+
+    console.error('');
+    console.error('========================================');
+    console.error('Diagnostic test complete');
+    console.error('========================================');
+    process.exit(0);
+  }
+
   try {
     // Initialize configuration (validates env vars and loads config file)
     const config = ConfigurationService.getInstance();
@@ -217,13 +306,50 @@ async function main(): Promise<void> {
     await server.connect(transport);
 
     // Log startup message to stderr (stdout is used for MCP protocol)
+    console.error('========================================');
     console.error('Continia Environment MCP Server started successfully');
+    console.error('========================================');
     console.error(`API URL: ${config.getApiUrl()}`);
+    console.error(`Token Status: ${config.hasValidToken() ? '✓ Configured' : '⚠ Not configured (tools will fail)'}`);
     console.error('Ready to accept connections via stdio');
+    console.error('========================================');
   } catch (error) {
-    // Log initialization errors to stderr
-    console.error('Failed to start Continia Environment MCP Server:');
-    console.error(error);
+    // Log initialization errors to stderr with detailed information
+    console.error('========================================');
+    console.error('Failed to start Continia Environment MCP Server');
+    console.error('========================================');
+    console.error('Timestamp:', new Date().toISOString());
+    console.error('Node Version:', process.version);
+    console.error('Platform:', process.platform);
+    console.error('Working Directory:', process.cwd());
+    console.error('');
+
+    // Log error details
+    if (error instanceof Error) {
+      console.error('Error Type:', error.name);
+      console.error('Error Message:', error.message);
+      if (error.stack) {
+        console.error('Stack Trace:');
+        console.error(error.stack);
+      }
+
+      // Check for specific error types
+      if (error.name === 'ValidationError') {
+        console.error('');
+        console.error('Configuration Issue Detected!');
+        console.error('Please check your Claude Desktop configuration.');
+      }
+    } else {
+      console.error('Error (non-Error object):', JSON.stringify(error, null, 2));
+    }
+
+    console.error('');
+    console.error('Troubleshooting:');
+    console.error('1. Ensure DEMO_PORTAL_TOKEN is set in your Claude Desktop config');
+    console.error('2. Check that all dependencies are installed');
+    console.error('3. Verify Node.js version is 18 or higher');
+    console.error('========================================');
+
     process.exit(1);
   }
 }
@@ -241,7 +367,19 @@ process.on('SIGTERM', () => {
 
 // Start the server
 main().catch((error) => {
+  console.error('========================================');
   console.error('Unhandled error in main():');
-  console.error(error);
+  console.error('========================================');
+
+  if (error instanceof Error) {
+    console.error('Error:', error.message);
+    if (error.stack) {
+      console.error('Stack:', error.stack);
+    }
+  } else {
+    console.error('Error:', error);
+  }
+
+  console.error('========================================');
   process.exit(1);
 });
