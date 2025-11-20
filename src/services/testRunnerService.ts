@@ -143,58 +143,25 @@ export class TestRunnerService {
     const signal = params.signal ?? AbortSignal.timeout(timeoutMs);
 
     // Submit test job
-    // Build test parameters - try multiple format combinations
+    // Build test parameters using the EXACT format from Environment Explorer
     const testParams: Record<string, unknown> = {};
 
-    // Try multiple field name variations for codeunit filtering
+    // Use the correct parameter names as discovered from Environment Explorer source
     if (params.codeunitId !== undefined) {
-      // Check if we're in diagnostic mode with minimal parameters
-      const diagnosticMode = process.env.TEST_MINIMAL_PARAMS === 'true';
-
-      if (diagnosticMode) {
-        // Try with just ONE parameter to isolate the issue
-        this.logger.info('Running in minimal parameter mode for diagnostics');
-        testParams.codeunitId = params.codeunitId;
-      } else {
-        // Normal mode - try multiple variations
-        // Primary formats based on AL Test Runner
-        testParams.testCodeunitId = params.codeunitId;
-        testParams.codeunitId = params.codeunitId;
-
-        // Additional variations to test
-        testParams.codeunit = params.codeunitId;
-        testParams.testCodeunit = params.codeunitId;
-        testParams.codeunitNo = params.codeunitId;
-
-        // Try as string as well (some APIs are sensitive to type)
-        testParams.testCodeunitIdString = String(params.codeunitId);
-
-        // Try exact casing variations
-        testParams.TestCodeunitId = params.codeunitId;
-        testParams.CodeunitId = params.codeunitId;
-      }
+      // MUST be 'testCodeunitId' as a number (not codeunitId or other variations)
+      testParams.testCodeunitId = params.codeunitId;
     }
 
     if (params.testMethod) {
-      // Primary formats
-      testParams.testMethod = params.testMethod;
-      testParams.testName = params.testMethod;
-
-      // Additional variations
-      testParams.testFunction = params.testMethod;
+      // MUST be 'testFunctionName' (not testMethod or other variations)
       testParams.testFunctionName = params.testMethod;
-      testParams.methodName = params.testMethod;
-
-      // Casing variations
-      testParams.TestMethod = params.testMethod;
-      testParams.TestName = params.testMethod;
     }
 
-    this.logger.info('Testing with multiple parameter formats', {
+    this.logger.info('Creating test job with standard BC parameters', {
       details: {
         environmentId: params.environmentId,
-        originalCodeunitId: params.codeunitId,
-        originalTestMethod: params.testMethod,
+        testCodeunitId: params.codeunitId,
+        testFunctionName: params.testMethod,
         parameterCount: Object.keys(testParams).length,
         testParams
       }

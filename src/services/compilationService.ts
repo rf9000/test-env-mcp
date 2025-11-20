@@ -193,6 +193,87 @@ export class CompilationService {
   }
 
   /**
+   * Detect if an app is a test app based on its app.json
+   *
+   * Test apps are identified by:
+   * - Name containing "Test" or "Test Suite"
+   * - ID ranges in test range [94999..95999] or [50000..99999]
+   * - Dependencies on Microsoft Test libraries
+   *
+   * @param appJsonRaw - Raw app.json object
+   * @returns true if this is a test app
+   */
+  private isTestApp(appJsonRaw: any): boolean {
+    // Check if name contains "Test" as a word or phrase
+    const name = appJsonRaw.name as string;
+    if (name) {
+      const nameLower = name.toLowerCase();
+      // Check for "test" as a word boundary or common test app patterns
+      // Use regex for better word boundary detection
+      const testPatterns = [
+        /\btest\b/,      // "test" as a whole word
+        /\btests\b/,     // "tests" as a whole word
+        /\btesting\b/,   // "testing" as a whole word
+        /\bmock\b/       // "mock" as a whole word
+      ];
+
+      if (testPatterns.some(pattern => pattern.test(nameLower))) {
+        return true;
+      }
+    }
+
+    // Check if any ID range is in test range
+    const idRanges = appJsonRaw.idRanges as Array<{ from: number; to: number }>;
+    if (idRanges && Array.isArray(idRanges)) {
+      for (const range of idRanges) {
+        // Test apps typically use ranges starting at 50000+ or specifically 94999-95999
+        if (range.from >= 94999 && range.to <= 95999) {
+          return true;
+        }
+        // Also check for broader test ranges
+        if (range.from >= 50000 && range.from < 100000) {
+          // If using customer object range and has test dependencies, it's likely a test app
+          const dependencies = appJsonRaw.dependencies as Array<{ name: string }>;
+          if (dependencies && Array.isArray(dependencies)) {
+            const hasTestDependencies = dependencies.some(dep =>
+              dep.name && (
+                dep.name.includes('Test') ||
+                dep.name.includes('Library Assert') ||
+                dep.name.includes('Test Runner')
+              )
+            );
+            if (hasTestDependencies) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+
+    // Check for test-specific dependencies
+    const dependencies = appJsonRaw.dependencies as Array<{ name: string; publisher: string }>;
+    if (dependencies && Array.isArray(dependencies)) {
+      const testLibraries = [
+        'Test Runner',
+        'Library Assert',
+        'Tests-TestLibraries',
+        'System Application Test Library',
+        'Library Variable Storage'
+      ];
+
+      const hasTestDependency = dependencies.some(dep =>
+        testLibraries.some(lib => dep.name && dep.name.includes(lib))
+      );
+
+      if (hasTestDependency) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
    * Get path to AL analyzer DLLs
    *
    * Resolves path based on installed version:
@@ -246,7 +327,8 @@ export class CompilationService {
    * Compile AL project
    *
    * Executes `al compile` with:
-   * - All three analyzers (CodeCop, AppSourceCop, UICop)
+   * - All three analyzers (CodeCop, AppSourceCop, UICop) for regular apps
+   * - Only CodeCop and UICop for test apps (AppSourceCop blocks test ID ranges)
    * - Continue build on error flag
    * - Optional ruleset
    *
@@ -263,7 +345,11 @@ export class CompilationService {
     // Read and validate app.json
     const appJsonPath = path.join(params.projectPath, 'app.json');
     const appJsonContent = await fs.readFile(appJsonPath, 'utf-8');
-    const appJson = AppJsonSchema.parse(JSON.parse(appJsonContent));
+    const appJsonRaw = JSON.parse(appJsonContent);
+    const appJson = AppJsonSchema.parse(appJsonRaw);
+
+    // Detect if this is a test app
+    const isTestApp = this.isTestApp(appJsonRaw);
 
     // Prepare output directory and filename
     const outputDir = path.join(params.projectPath, 'build');
@@ -274,11 +360,25 @@ export class CompilationService {
 
     // Get analyzer path
     const analyzerBasePath = await this.getAnalyzerPath();
-    const analyzers = [
-      path.join(analyzerBasePath, 'Microsoft.Dynamics.Nav.CodeCop.dll'),
-      path.join(analyzerBasePath, 'Microsoft.Dynamics.Nav.AppSourceCop.dll'),
-      path.join(analyzerBasePath, 'Microsoft.Dynamics.Nav.UICop.dll')
-    ];
+
+    // Configure analyzers based on app type
+    const analyzers = isTestApp
+      ? [
+          // Exclude AppSourceCop for test apps (it blocks test ID ranges)
+          path.join(analyzerBasePath, 'Microsoft.Dynamics.Nav.CodeCop.dll'),
+          path.join(analyzerBasePath, 'Microsoft.Dynamics.Nav.UICop.dll')
+        ]
+      : [
+          // Include all analyzers for regular apps
+          path.join(analyzerBasePath, 'Microsoft.Dynamics.Nav.CodeCop.dll'),
+          path.join(analyzerBasePath, 'Microsoft.Dynamics.Nav.AppSourceCop.dll'),
+          path.join(analyzerBasePath, 'Microsoft.Dynamics.Nav.UICop.dll')
+        ];
+
+    // Log analyzer configuration
+    if (isTestApp) {
+      console.log(`ℹ️  Detected test app "${appJson.name}" - excluding AppSourceCop analyzer`);
+    }
 
     // Build al compile command
     const args = [
