@@ -69,7 +69,7 @@ export class DiagnoseTestsTool {
             message:
               diagnosticResults.withoutFilter.summary.total > 0
                 ? `Found ${diagnosticResults.withoutFilter.summary.total} tests when running without filter`
-                : 'NO TESTS FOUND even without filter - check if test app is published'
+                : 'NO TESTS FOUND in environment. This confirms the test app is NOT published. Action required: Run compile_and_publish to publish your test app.'
           },
           testsWithFilter: params.codeunitId
             ? {
@@ -78,7 +78,7 @@ export class DiagnoseTestsTool {
                 message:
                   diagnosticResults.withFilter?.summary.total ?? 0 > 0
                     ? `Found ${diagnosticResults.withFilter?.summary.total} tests for codeunit ${params.codeunitId}`
-                    : `No tests found for codeunit ${params.codeunitId} - filter may not be working`
+                    : `No tests found for codeunit ${params.codeunitId}. Either the codeunit doesn't exist in the published app, it's not a test codeunit (missing Subtype = Test), or the API filtering is not working correctly.`
               }
             : undefined,
           analysis: diagnosticResults.analysis,
@@ -86,11 +86,12 @@ export class DiagnoseTestsTool {
         },
         troubleshooting: {
           steps: [
-            '1. Check logs above for exact API parameters sent',
-            '2. Verify test app is published to the environment',
-            '3. Try running with TEST_MINIMAL_PARAMS=true to use single parameter',
-            '4. Check if codeunit ID is correct and has test methods',
-            '5. Ensure environment is in Running state'
+            '1. Use check_test_app_status tool to verify compilation and publication status',
+            '2. If app not published, run compile_and_publish to publish test app',
+            '3. Check logs above for exact API parameters being sent',
+            '4. Verify codeunit ID is correct and exists in the published app',
+            '5. Ensure test codeunit has Subtype = Test and methods have [Test] attribute',
+            '6. Confirm environment is in Running state before testing'
           ],
           nextActions: this.getNextActions(diagnosticResults)
         }

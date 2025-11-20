@@ -70,6 +70,9 @@ export interface CompileResult {
   app: AppJson;
   diagnostics: Diagnostic[];
   compilerOutput: string;
+  testAppDetected?: boolean;
+  estimatedTestCount?: number;
+  testCodeunits?: string[];
 }
 
 /**
@@ -85,6 +88,11 @@ export interface CompileAndPublishResult {
     user: string;
   };
   fetchedAt: string;
+  verificationStatus?: {
+    verified: boolean;
+    testsAvailable?: number;
+    message: string;
+  };
 }
 
 /**
@@ -162,12 +170,29 @@ export class CompilationService {
       schemaUpdateMode: params.schemaUpdateMode ?? 'synchronize'
     });
 
-    return {
+    // Phase 5: Verify publication (optional, only if publish succeeded)
+    let verificationStatus: CompileAndPublishResult['verificationStatus'] = undefined;
+    if (publishResult.success) {
+      const isTestApp = compileResult.testAppDetected ?? false;
+      verificationStatus = await this.verifyPublishedApp(
+        params.environmentId,
+        compileResult.app,
+        isTestApp
+      );
+    }
+
+    const result: CompileAndPublishResult = {
       type: 'compile_and_publish_result',
       compile: compileResult,
       publish: publishResult,
       fetchedAt: new Date().toISOString()
     };
+
+    if (verificationStatus) {
+      result.verificationStatus = verificationStatus;
+    }
+
+    return result;
   }
 
   /**
@@ -274,6 +299,162 @@ export class CompilationService {
   }
 
   /**
+   * Verify that a published app is available in the environment
+   *
+   * Attempts to check if the published app is queryable by:
+   * 1. Running a diagnostic test job if it's a test app
+   * 2. Checking for available tests in the environment
+   *
+   * @param environmentId - Environment ID
+   * @param appJson - App metadata
+   * @param isTestApp - Whether this is a test app
+   * @returns Verification status
+   */
+  private async verifyPublishedApp(
+    environmentId: string,
+    _appJson: AppJson,
+    isTestApp: boolean
+  ): Promise<{
+    verified: boolean;
+    testsAvailable?: number;
+    message: string;
+  }> {
+    try {
+      // If it's a test app, try to verify by checking test availability
+      if (isTestApp) {
+        // Create a diagnostic test job to check test availability
+        const testParams = {};
+        const { jobId } = await this.demoPortalClient.createTestJob(
+          environmentId,
+          testParams
+        );
+
+        // Poll for test results (short timeout for verification)
+        const maxAttempts = 10;
+        let attempts = 0;
+        let testsAvailable = 0;
+
+        while (attempts < maxAttempts) {
+          await new Promise<void>(resolve => setTimeout(resolve, 2000));
+
+          try {
+            const result = await this.demoPortalClient.getTestResultsXml(
+              environmentId,
+              jobId
+            );
+
+            if (result?.xml) {
+              // Parse the XML to count available tests
+              const testCountMatch = result.xml.match(/<testcase/g);
+              testsAvailable = testCountMatch ? testCountMatch.length : 0;
+
+              return {
+                verified: true,
+                testsAvailable,
+                message: testsAvailable > 0
+                  ? `Verified: ${testsAvailable} test(s) available in environment`
+                  : 'App published but no tests detected in environment'
+              };
+            }
+          } catch (pollError) {
+            // Continue polling
+          }
+
+          attempts++;
+        }
+
+        return {
+          verified: false,
+          testsAvailable: 0,
+          message: 'Unable to verify app publication - test job did not complete'
+        };
+      }
+
+      // For non-test apps, we can only confirm the publish operation succeeded
+      return {
+        verified: true,
+        message: 'App published successfully (non-test app, verification limited)'
+      };
+    } catch (error) {
+      return {
+        verified: false,
+        message: `Verification failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+    }
+  }
+
+  /**
+   * Detect test codeunits in AL source files
+   *
+   * Scans .al files for:
+   * - Codeunits with Subtype = Test
+   * - Methods with [Test] attribute
+   *
+   * @param projectPath - Path to AL project
+   * @returns Test detection information
+   */
+  private async detectTestCodeunits(projectPath: string): Promise<{
+    testCodeunits: string[];
+    estimatedTestCount: number;
+    isTestApp: boolean;
+  }> {
+    const testCodeunits: string[] = [];
+    let estimatedTestCount = 0;
+
+    try {
+      // Find all .al files recursively
+      const alFiles: string[] = [];
+      const scanDirectory = async (dir: string) => {
+        const entries = await fs.readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
+          if (entry.isDirectory() && entry.name !== '.alpackages' && entry.name !== 'build') {
+            await scanDirectory(fullPath);
+          } else if (entry.isFile() && entry.name.endsWith('.al')) {
+            alFiles.push(fullPath);
+          }
+        }
+      };
+
+      await scanDirectory(projectPath);
+
+      // Scan each file for test codeunits and methods
+      for (const filePath of alFiles) {
+        const content = await fs.readFile(filePath, 'utf8');
+
+        // Check for test codeunit
+        const codeunitMatch = content.match(/codeunit\s+(\d+)\s+"?([^"{\n]+)"?\s*{/i);
+        if (codeunitMatch && codeunitMatch[2]) {
+          const codeunitName = codeunitMatch[2];
+
+          // Check if it has Subtype = Test
+          const subtypeMatch = content.match(/Subtype\s*=\s*Test/i);
+          if (subtypeMatch) {
+            testCodeunits.push(codeunitName);
+
+            // Count [Test] methods
+            const testMethodMatches = content.matchAll(/\[Test\]/gi);
+            let methodCount = 0;
+            for (const _ of testMethodMatches) {
+              methodCount++;
+            }
+            estimatedTestCount += methodCount;
+          }
+        }
+      }
+    } catch (error) {
+      // If we can't scan the files, we'll just return empty results
+      // Silent failure - test detection is not critical for compilation
+    }
+
+    return {
+      testCodeunits,
+      estimatedTestCount,
+      isTestApp: testCodeunits.length > 0
+    };
+  }
+
+  /**
    * Get path to AL analyzer DLLs
    *
    * Resolves path based on installed version:
@@ -375,10 +556,8 @@ export class CompilationService {
           path.join(analyzerBasePath, 'Microsoft.Dynamics.Nav.UICop.dll')
         ];
 
-    // Log analyzer configuration
-    if (isTestApp) {
-      console.log(`ℹ️  Detected test app "${appJson.name}" - excluding AppSourceCop analyzer`);
-    }
+    // Log analyzer configuration (Note: We'd need to inject a logger for proper logging)
+    // For now, we'll include this info in the compiler output
 
     // Build al compile command
     const args = [
@@ -446,13 +625,37 @@ export class CompilationService {
         // Verify output exists
         try {
           const stats = await fs.stat(outputPath);
+
+          // Detect test codeunits in the compiled app
+          const testInfo = await this.detectTestCodeunits(params.projectPath);
+
+          // Log test app detection for diagnostics
+          const testAppStatus = isTestApp
+            ? `Test app detected (by app.json metadata)`
+            : testInfo.isTestApp
+            ? `Test app detected (found ${testInfo.testCodeunits.length} test codeunit(s) with ${testInfo.estimatedTestCount} test method(s))`
+            : 'Regular app (no test codeunits found)';
+
+          // Include test detection info in the compiler output for diagnostics
+          const testDiagnostics = `
+=== Test App Detection ===
+App Name: ${appJson.name}
+App Version: ${appJson.version}
+Status: ${testAppStatus}
+Test Codeunits: ${testInfo.testCodeunits.length > 0 ? testInfo.testCodeunits.join(', ') : 'None'}
+Estimated Test Count: ${testInfo.estimatedTestCount}
+`;
+
           resolve({
             success: true,
             appPath: outputPath,
             appSize: stats.size,
             app: appJson,
             diagnostics,
-            compilerOutput: stdout
+            compilerOutput: stdout + testDiagnostics,
+            testAppDetected: isTestApp || testInfo.isTestApp,
+            estimatedTestCount: testInfo.estimatedTestCount,
+            testCodeunits: testInfo.testCodeunits
           });
         } catch {
           reject(

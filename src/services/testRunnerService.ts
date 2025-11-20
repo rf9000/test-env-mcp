@@ -202,10 +202,12 @@ export class TestRunnerService {
           testMethod: params.testMethod,
           jobId,
           message: 'The test job completed but found no tests to execute. Possible causes: ' +
-                   '1) The codeunit does not exist in the environment, ' +
+                   '1) The codeunit does not exist in the environment (verify app is published), ' +
                    '2) The codeunit is not a test codeunit (missing Subtype = Test), ' +
                    '3) The codeunit has no test methods (missing [Test] attribute), ' +
-                   '4) The API might not be applying the codeunit filter correctly'
+                   '4) The test app was compiled but not published to this environment, ' +
+                   '5) The API might not be applying the codeunit filter correctly (testCodeunitId parameter)',
+          diagnosticHint: 'Use the diagnose_tests tool to verify test availability in the environment'
         }
       });
     } else if (summary.total > 0) {
@@ -354,15 +356,17 @@ export class TestRunnerService {
     const recommendations: string[] = [];
 
     if (diagnosticResults.analysis.totalTestsAvailable === 0) {
-      recommendations.push('No tests available in environment. Ensure test app is published.');
-      recommendations.push('Check if test runner codeunit is installed.');
-      recommendations.push('Verify environment has test suites configured.');
+      recommendations.push('No tests available in environment. This indicates the test app is NOT published to this environment.');
+      recommendations.push('Action required: Run compile_and_publish to publish your test app to this environment.');
+      recommendations.push('Alternative causes: Test runner codeunit not installed, or environment has no test suites configured.');
+      recommendations.push('Verify: Use compile_app tool to check if test codeunits were detected during compilation.');
     } else if (diagnosticResults.withFilter?.summary.total === 0) {
       recommendations.push(`Codeunit ${diagnosticResults.analysis.requestedCodeunitId} not found or has no tests.`);
-      recommendations.push('Check if codeunit ID is correct.');
-      recommendations.push('Verify codeunit has Subtype = Test.');
-      recommendations.push('Ensure test methods have [Test] attribute.');
-      recommendations.push('The Demo Portal API may not support codeunit filtering.');
+      recommendations.push('Verify the codeunit ID is correct and exists in the published app.');
+      recommendations.push('Check that the codeunit has Subtype = Test in its definition.');
+      recommendations.push('Ensure test methods have the [Test] attribute.');
+      recommendations.push('Note: The test app may be an older version - recompile and republish if changes were made.');
+      recommendations.push('Known issue: The Demo Portal API may have issues with the testCodeunitId filtering parameter.');
     }
 
     return recommendations;

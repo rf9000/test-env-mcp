@@ -66,6 +66,7 @@ import {
   executeCompileAndPublish
 } from './tools/compileAndPublish.js';
 import { DiagnoseTestsTool } from './tools/diagnoseTests.js';
+import { CheckTestAppStatusTool } from './tools/checkTestAppStatus.js';
 
 /**
  * Main server initialization and setup
@@ -177,6 +178,7 @@ async function main(): Promise<void> {
     const devEndpointClient = new DeveloperEndpointClient(credentialsService);
     const compilationService = new CompilationService(demoPortalClient, devEndpointClient);
     const diagnoseTestsTool = new DiagnoseTestsTool(testRunnerService);
+    const checkTestAppStatusTool = new CheckTestAppStatusTool(demoPortalClient);
 
     // Create diagnostic tool definition
     const diagnoseTestsToolDefinition = {
@@ -201,6 +203,13 @@ async function main(): Promise<void> {
         },
         required: ['environmentId']
       }
+    };
+
+    // Create check test app status tool definition
+    const checkTestAppStatusToolDefinition = {
+      name: checkTestAppStatusTool.name,
+      description: checkTestAppStatusTool.description,
+      inputSchema: checkTestAppStatusTool.schema
     };
 
     // Create MCP server
@@ -228,7 +237,8 @@ async function main(): Promise<void> {
           stopEnvironmentTool,
           runTestsToolDefinition,
           compileAndPublishToolDefinition,
-          diagnoseTestsToolDefinition
+          diagnoseTestsToolDefinition,
+          checkTestAppStatusToolDefinition
         ]
       };
     });
@@ -290,6 +300,10 @@ async function main(): Promise<void> {
 
           case 'diagnose_tests':
             result = await diagnoseTestsTool.execute(args || {});
+            break;
+
+          case 'check_test_app_status':
+            result = await checkTestAppStatusTool.execute((args || {}) as never);
             break;
 
           default:
