@@ -358,7 +358,7 @@ export class EnvironmentService {
     [key: string]: unknown;
   } {
     // Exclude fields already used in base environment structure
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const {
       id,
       name,

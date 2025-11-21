@@ -15,8 +15,9 @@ import { XMLParser } from 'fast-xml-parser';
 import { parse as parseCsv } from 'csv-parse/sync';
 import type { DemoPortalClient } from '@/api/demoPortalClient.js';
 import type { ConfigurationService } from '@/services/configurationService.js';
-import { NotFoundError, TimeoutError } from '@/errors/errors.js';
+import { NotFoundError, TimeoutError, ValidationError } from '@/errors/errors.js';
 import { Logger } from '@/utils/logger.js';
+import { TestRegistry } from '@/testRegistry.js';
 
 /**
  * Parameters for running tests
@@ -32,6 +33,8 @@ export interface RunTestsParams {
   includeCoverage?: boolean | undefined;
   /** Timeout in seconds (default: 600 = 10 minutes) */
   timeoutSeconds?: number | undefined;
+  /** Optional workspace path for test discovery/validation */
+  workspacePath?: string | undefined;
   /** Cancellation signal */
   // eslint-disable-next-line no-undef
   signal?: AbortSignal | undefined;
@@ -108,12 +111,15 @@ export interface CoverageObject {
 export class TestRunnerService {
   private xmlParser: XMLParser;
   private logger: Logger;
+  private testRegistry: TestRegistry | null = null;
 
   constructor(
     // eslint-disable-next-line no-unused-vars
     private readonly demoPortalClient: DemoPortalClient,
     // eslint-disable-next-line no-unused-vars
-    private readonly config: ConfigurationService
+    private readonly config: ConfigurationService,
+     
+    testRegistry?: TestRegistry
   ) {
     // Configure XML parser for JUnit format
     this.xmlParser = new XMLParser({
@@ -125,6 +131,9 @@ export class TestRunnerService {
 
     // Initialize logger
     this.logger = Logger.getInstance();
+
+    // Store test registry if provided
+    this.testRegistry = testRegistry || null;
   }
 
   /**
@@ -141,6 +150,11 @@ export class TestRunnerService {
     const startTime = Date.now();
     const timeoutMs = (params.timeoutSeconds ?? 600) * 1000;
     const signal = params.signal ?? AbortSignal.timeout(timeoutMs);
+
+    // Validate tests exist in workspace if registry is available
+    if (this.testRegistry && params.workspacePath) {
+      await this.validateTestsExist(params);
+    }
 
     // Submit test job
     // Build test parameters using the EXACT format from Environment Explorer
@@ -476,7 +490,7 @@ export class TestRunnerService {
     let durationSec = 0;
 
     for (const suite of suites) {
-      if (!suite) continue;
+      if (!suite) {continue;}
 
       // Parse numeric attributes
       const suiteTests = parseInt(String(suite.tests || '0'));
@@ -518,7 +532,7 @@ export class TestRunnerService {
       : [testsuites.testsuite || testsuites];
 
     for (const suite of suites) {
-      if (!suite) continue;
+      if (!suite) {continue;}
 
       const suiteName = String(suite.name || 'Unknown');
 
@@ -602,6 +616,68 @@ export class TestRunnerService {
       },
       byObject
     };
+  }
+
+  /**
+   * Validate that requested tests exist in the workspace
+   *
+   * @param params - Test parameters including workspace path
+   * @throws {ValidationError} If tests are not found in workspace
+   */
+  private async validateTestsExist(params: RunTestsParams): Promise<void> {
+    if (!this.testRegistry || !params.workspacePath) {
+      return; // Skip validation if registry or workspace not available
+    }
+
+    const validation = await this.testRegistry.validateTestParameters(
+      params.workspacePath,
+      params.codeunitId,
+      params.testMethod
+    );
+
+    if (!validation.valid) {
+      this.logger.error('Test validation failed', validation.message, {
+        details: {
+          codeunitId: params.codeunitId,
+          testMethod: params.testMethod,
+          availableCodeunits: validation.availableCodeunits,
+          availableMethods: validation.availableMethods
+        }
+      });
+
+      // Build helpful error message
+      let errorMessage = validation.message;
+
+      if (validation.availableCodeunits && validation.availableCodeunits.length > 0) {
+        errorMessage += `\n\nAvailable test codeunits in workspace:\n`;
+        const testCodeunits = await this.testRegistry.getTestCodeunits(params.workspacePath);
+        for (const tc of testCodeunits) {
+          errorMessage += `  - Codeunit ${tc.file.object.id} "${tc.file.object.name}" (${tc.testMethods.length} tests)\n`;
+        }
+        errorMessage += `\nUse the 'list_tests' tool to see all available tests.`;
+      } else if (validation.availableMethods && validation.availableMethods.length > 0) {
+        errorMessage += `\n\nAvailable test methods in codeunit ${params.codeunitId}:\n`;
+        for (const method of validation.availableMethods) {
+          errorMessage += `  - ${method}\n`;
+        }
+      } else {
+        errorMessage += `\n\nNo test codeunits found in workspace. Please ensure:\n`;
+        errorMessage += `  1. Test codeunits have 'Subtype = Test'\n`;
+        errorMessage += `  2. Test methods have [Test] attribute\n`;
+        errorMessage += `  3. Workspace path is correct\n`;
+        errorMessage += `\nUse the 'list_tests' tool to discover available tests.`;
+      }
+
+      throw new ValidationError(errorMessage);
+    }
+
+    // Log successful validation
+    this.logger.info(`Test validation successful: ${validation.message}`, {
+      details: {
+        codeunitId: params.codeunitId,
+        testMethod: params.testMethod
+      }
+    });
   }
 
   /**

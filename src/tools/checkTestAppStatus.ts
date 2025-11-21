@@ -140,7 +140,7 @@ export class CheckTestAppStatusTool {
 
         // Check for test codeunit
         const codeunitMatch = content.match(/codeunit\s+(\d+)\s+"?([^"{\n]+)"?\s*{/i);
-        if (codeunitMatch && codeunitMatch[2]) {
+        if (codeunitMatch?.[2]) {
           const codeunitId = codeunitMatch[1];
           const codeunitName = codeunitMatch[2];
 

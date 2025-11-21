@@ -67,6 +67,12 @@ import {
 } from './tools/compileAndPublish.js';
 import { DiagnoseTestsTool } from './tools/diagnoseTests.js';
 import { CheckTestAppStatusTool } from './tools/checkTestAppStatus.js';
+import {
+  listTestsToolDefinition,
+  executeListTests
+} from './tools/listTests.js';
+import { TestRegistry } from './testRegistry.js';
+import { Logger } from './logger.js';
 
 /**
  * Main server initialization and setup
@@ -171,19 +177,23 @@ async function main(): Promise<void> {
     // Initialize API clients
     const demoPortalClient = new DemoPortalClient(httpClient);
 
+    // Initialize test registry for local test discovery
+    const logger = new Logger('Main');
+    const testRegistry = new TestRegistry(logger);
+
     // Initialize services
     const environmentService = new EnvironmentService(demoPortalClient);
-    const testRunnerService = new TestRunnerService(demoPortalClient, config);
+    const testRunnerService = new TestRunnerService(demoPortalClient, config, testRegistry);
     const credentialsService = new CredentialsService(demoPortalClient, config);
     const devEndpointClient = new DeveloperEndpointClient(credentialsService);
     const compilationService = new CompilationService(demoPortalClient, devEndpointClient);
-    const diagnoseTestsTool = new DiagnoseTestsTool(testRunnerService);
+    const diagnoseTestsTool = new DiagnoseTestsTool(testRunnerService, testRegistry);
     const checkTestAppStatusTool = new CheckTestAppStatusTool(demoPortalClient);
 
     // Create diagnostic tool definition
     const diagnoseTestsToolDefinition = {
       name: 'diagnose_tests',
-      description: 'Diagnose why tests are not running or returning 0 results. Runs tests with and without filters to identify issues.',
+      description: 'Diagnose why tests are not running or returning 0 results. Runs tests with and without filters to identify issues. Can compare source tests with environment tests.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -194,6 +204,10 @@ async function main(): Promise<void> {
           codeunitId: {
             type: 'number',
             description: 'Optional codeunit ID to test filtering'
+          },
+          workspacePath: {
+            type: 'string',
+            description: 'Optional workspace path for source file comparison'
           },
           verbose: {
             type: 'boolean',
@@ -238,7 +252,8 @@ async function main(): Promise<void> {
           runTestsToolDefinition,
           compileAndPublishToolDefinition,
           diagnoseTestsToolDefinition,
-          checkTestAppStatusToolDefinition
+          checkTestAppStatusToolDefinition,
+          listTestsToolDefinition
         ]
       };
     });
@@ -304,6 +319,13 @@ async function main(): Promise<void> {
 
           case 'check_test_app_status':
             result = await checkTestAppStatusTool.execute((args || {}) as never);
+            break;
+
+          case 'list_tests':
+            result = await executeListTests(
+              testRegistry,
+              (args || {}) as never
+            );
             break;
 
           default:

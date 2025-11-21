@@ -13,6 +13,7 @@
 
 import { z } from 'zod';
 import type { TestRunnerService } from '@/services/testRunnerService.js';
+import { TestRegistry } from '@/testRegistry.js';
 
 /**
  * Input schema for the diagnose tests tool
@@ -23,6 +24,10 @@ export const DiagnoseTestsInputSchema = z.object({
     .number()
     .optional()
     .describe('Optional codeunit ID to test filtering'),
+  workspacePath: z
+    .string()
+    .optional()
+    .describe('Optional workspace path for source file comparison'),
   verbose: z
     .boolean()
     .optional()
@@ -36,7 +41,10 @@ export type DiagnoseTestsInput = z.infer<typeof DiagnoseTestsInputSchema>;
  * Diagnose test execution issues
  */
 export class DiagnoseTestsTool {
-  constructor(private readonly testRunnerService: TestRunnerService) {}
+  constructor(
+    private readonly testRunnerService: TestRunnerService,
+    private readonly testRegistry?: TestRegistry
+  ) {}
 
   /**
    * Execute the diagnostic
@@ -56,6 +64,16 @@ export class DiagnoseTestsTool {
         params.environmentId,
         params.codeunitId
       );
+
+      // Perform source comparison if workspace path is provided
+      let sourceComparison = undefined;
+      if (params.workspacePath && this.testRegistry) {
+        sourceComparison = await this.compareSourceWithEnvironment(
+          params.workspacePath,
+          diagnosticResults,
+          params.codeunitId
+        );
+      }
 
       // Format the results for clear presentation
       const formatted = {
@@ -82,7 +100,8 @@ export class DiagnoseTestsTool {
               }
             : undefined,
           analysis: diagnosticResults.analysis,
-          recommendations: diagnosticResults.analysis.recommendations
+          recommendations: diagnosticResults.analysis.recommendations,
+          sourceComparison: sourceComparison
         },
         troubleshooting: {
           steps: [
@@ -123,5 +142,106 @@ export class DiagnoseTestsTool {
     }
 
     return actions;
+  }
+
+  /**
+   * Compare tests found in source files with tests in environment
+   */
+  private async compareSourceWithEnvironment(
+    workspacePath: string,
+    diagnosticResults: any,
+    codeunitId?: number
+  ): Promise<any> {
+    if (!this.testRegistry) {
+      return null;
+    }
+
+    // Get tests from source files
+    const sourceTests = await this.testRegistry.getTestCodeunits(workspacePath);
+    const sourceCodeunitIds = sourceTests.map(tc => tc.file.object.id);
+
+    // Get tests from environment (from diagnostic results)
+    const environmentTests = diagnosticResults.withoutFilter.summary.total;
+
+    // Build comparison report
+    const comparison: any = {
+      summary: {
+        inSource: sourceTests.length,
+        inEnvironment: environmentTests > 0 ? 'Tests found' : 'No tests found',
+        sourceCodeunitIds: sourceCodeunitIds,
+        totalSourceTests: sourceTests.reduce((sum, tc) => sum + tc.testMethods.length, 0)
+      }
+    };
+
+    // If filtering by codeunit, provide specific comparison
+    if (codeunitId) {
+      const sourceCodeunit = sourceTests.find(tc => tc.file.object.id === codeunitId);
+
+      if (sourceCodeunit) {
+        comparison.specificCodeunit = {
+          id: codeunitId,
+          name: sourceCodeunit.file.object.name,
+          inSource: true,
+          sourceTestMethods: sourceCodeunit.testMethods.map(m => m.name),
+          sourceTestCount: sourceCodeunit.testMethods.length,
+          inEnvironment: diagnosticResults.withFilter?.summary.total > 0,
+          environmentTestCount: diagnosticResults.withFilter?.summary.total || 0
+        };
+
+        // Analyze discrepancy
+        if (sourceCodeunit.testMethods.length > 0 && diagnosticResults.withFilter?.summary.total === 0) {
+          comparison.discrepancy = {
+            issue: 'Tests exist in source but not found in environment',
+            possibleCauses: [
+              '1. Test app not published or outdated',
+              '2. Compilation errors preventing publication',
+              '3. Test codeunit ID mismatch between source and published app',
+              '4. API filter parameters not working correctly'
+            ],
+            recommendedActions: [
+              'Run compile_and_publish to ensure latest code is published',
+              'Use check_test_app_status to verify publication status',
+              'Check compilation output for errors'
+            ]
+          };
+        }
+      } else {
+        comparison.specificCodeunit = {
+          id: codeunitId,
+          inSource: false,
+          message: `Codeunit ${codeunitId} not found in source files`,
+          availableInSource: sourceCodeunitIds
+        };
+      }
+    }
+
+    // General analysis
+    if (sourceTests.length > 0 && environmentTests === 0) {
+      comparison.analysis = {
+        status: 'critical',
+        message: 'Test codeunits found in source but NO tests in environment',
+        action: 'Immediate action required: Run compile_and_publish to publish test app'
+      };
+    } else if (sourceTests.length === 0 && environmentTests > 0) {
+      comparison.analysis = {
+        status: 'warning',
+        message: 'Tests found in environment but no test source files in workspace',
+        action: 'Verify workspace path is correct or tests are in a different location'
+      };
+    } else if (sourceTests.length > 0 && environmentTests > 0) {
+      comparison.analysis = {
+        status: 'ok',
+        message: 'Tests found in both source and environment',
+        note: 'Verify test counts match expectations'
+      };
+    } else {
+      comparison.analysis = {
+        status: 'info',
+        message: 'No tests found in source or environment',
+        action: 'Create test codeunits with Subtype = Test and [Test] attributes'
+      };
+    }
+
+    return comparison;
   }
 }

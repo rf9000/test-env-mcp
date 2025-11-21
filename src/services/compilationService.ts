@@ -424,7 +424,7 @@ export class CompilationService {
 
         // Check for test codeunit
         const codeunitMatch = content.match(/codeunit\s+(\d+)\s+"?([^"{\n]+)"?\s*{/i);
-        if (codeunitMatch && codeunitMatch[2]) {
+        if (codeunitMatch?.[2]) {
           const codeunitName = codeunitMatch[2];
 
           // Check if it has Subtype = Test
@@ -470,7 +470,7 @@ export class CompilationService {
       /microsoft\.dynamics\.businesscentral\.development\.tools\s+([\d\.-]+[a-z]*)/i
     );
 
-    if (!match || !match[1]) {
+    if (!match?.[1]) {
       throw new ValidationError('Could not determine AL CLI tools version', {
         hint: 'Run "dotnet tool list -g" manually to verify installation'
       });
@@ -718,7 +718,7 @@ Estimated Test Count: ${testInfo.estimatedTestCount}
 
     for (const line of lines) {
       const match = diagnosticPattern.exec(line.trim());
-      if (match && match[1] && match[2] && match[3] && match[4] && match[5] && match[6]) {
+      if (match?.[1] && match[2] && match[3] && match[4] && match[5] && match[6]) {
         diagnostics.push({
           file: match[1],
           line: parseInt(match[2]),

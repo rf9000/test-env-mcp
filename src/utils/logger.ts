@@ -226,11 +226,11 @@ export class Logger {
     };
 
     // Only add optional properties if they exist
-    if (entry.requestId) sanitized.requestId = entry.requestId;
-    if (entry.duration !== undefined) sanitized.duration = entry.duration;
-    if (entry.outcome) sanitized.outcome = entry.outcome;
-    if (entry.error) sanitized.error = ErrorService.redact(entry.error);
-    if (entry.details) sanitized.details = ErrorService.redactObject(entry.details);
+    if (entry.requestId) {sanitized.requestId = entry.requestId;}
+    if (entry.duration !== undefined) {sanitized.duration = entry.duration;}
+    if (entry.outcome) {sanitized.outcome = entry.outcome;}
+    if (entry.error) {sanitized.error = ErrorService.redact(entry.error);}
+    if (entry.details) {sanitized.details = ErrorService.redactObject(entry.details);}
 
     return sanitized;
   }

@@ -44,7 +44,11 @@ export const RunTestsInputSchema = z
       .max(3600, 'Timeout cannot exceed 3600 seconds (1 hour)')
       .optional()
       .default(600)
-      .describe('Maximum time to wait for test completion in seconds (default: 600 = 10 minutes)')
+      .describe('Maximum time to wait for test completion in seconds (default: 600 = 10 minutes)'),
+    workspacePath: z
+      .string()
+      .optional()
+      .describe('Optional workspace path for test discovery/validation. If provided, will validate tests exist before running.')
   })
   .strict();
 
@@ -192,6 +196,11 @@ Example 4: Run with extended timeout
         type: 'number',
         description:
           'Maximum time to wait for test completion in seconds (default: 600 = 10 minutes)'
+      },
+      workspacePath: {
+        type: 'string',
+        description:
+          'Optional workspace path for test discovery/validation. If provided, will validate tests exist before running.'
       }
     },
     required: ['environmentId']
@@ -219,7 +228,8 @@ export async function executeRunTests(
       codeunitId: validated.codeunitId,
       testMethod: validated.testMethod,
       includeCoverage: validated.includeCoverage,
-      timeoutSeconds: validated.timeoutSeconds
+      timeoutSeconds: validated.timeoutSeconds,
+      workspacePath: validated.workspacePath
     });
     return result;
   } catch (error) {
