@@ -1,0 +1,34 @@
+# Source files (dist is published)
+src/
+*.ts
+!*.d.ts
+
+# Config files
+tsconfig.json
+esbuild.config.js
+eslint.config.js
+vitest*.config.ts
+.env*
+!.env.example
+
+# Claude/development files
+.claude/
+.husky/
+.mcp.json
+
+# Documentation (keep README and LICENSE)
+PROGRESS.md
+developmentguide.md
+InstallGuide.md
+TestGuide.md
+
+# Test files
+tests/
+**/*.test.ts
+**/*.spec.ts
+coverage/
+
+# Build artifacts
+node_modules/
+*.log
+*.map
