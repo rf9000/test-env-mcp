@@ -28,14 +28,12 @@ await esbuild.build({
   banner: {
     js: '#!/usr/bin/env node',
   },
+  // Keep CommonJS packages and node built-ins external, but bundle MCP SDK
   external: [
-    '@modelcontextprotocol/sdk',
     'axios',
     'form-data',
-    'zod',
     'fast-xml-parser',
     'csv-parse',
-    'tsconfig-paths'
   ],
   alias,
   sourcemap: true,
