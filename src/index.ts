@@ -39,6 +39,7 @@ import { EnvironmentService } from './services/environmentService.js';
 import { TestRunnerService } from './services/testRunnerService.js';
 import { CredentialsService } from './services/credentialsService.js';
 import { CompilationService } from './services/compilationService.js';
+import { TestRunnerInfrastructureService } from './services/testRunnerInfrastructureService.js';
 
 // Import tools
 import {
@@ -183,10 +184,26 @@ async function main(): Promise<void> {
 
     // Initialize services
     const environmentService = new EnvironmentService(demoPortalClient);
-    const testRunnerService = new TestRunnerService(demoPortalClient, config, testRegistry);
     const credentialsService = new CredentialsService(demoPortalClient, config);
     const devEndpointClient = new DeveloperEndpointClient(credentialsService);
     const compilationService = new CompilationService(demoPortalClient, devEndpointClient);
+
+    // Initialize Test Runner infrastructure service
+    const testRunnerInfrastructureService = new TestRunnerInfrastructureService(
+      demoPortalClient,
+      devEndpointClient,
+      credentialsService,
+      config
+    );
+
+    // Initialize Test Runner service with infrastructure support
+    const testRunnerService = new TestRunnerService(
+      demoPortalClient,
+      config,
+      testRegistry,
+      testRunnerInfrastructureService
+    );
+
     const diagnoseTestsTool = new DiagnoseTestsTool(testRunnerService, testRegistry);
     const checkTestAppStatusTool = new CheckTestAppStatusTool(demoPortalClient);
 

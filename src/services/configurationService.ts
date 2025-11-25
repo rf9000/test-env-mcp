@@ -48,6 +48,16 @@ const ConfigSchema = z.object({
   }),
   environment: z.object({
     defaultAuthMethod: z.enum(['NavUserPassword', 'Windows', 'AzureAd']).default('NavUserPassword')
+  }),
+  testRunner: z.object({
+    /** Path to the Test Runner BC app source */
+    sourcePath: z.string().default('C:\\GeneralDev\\MCPDevelopment\\AL Developer Tools - Continia AL Test Runner\\bc-app'),
+    /** Enable auto-installation of Test Runner when missing */
+    autoInstall: z.boolean().default(true),
+    /** Schema update mode for Test Runner publication */
+    schemaUpdateMode: z.enum(['synchronize', 'forcesync']).default('forcesync'),
+    /** Duration to cache Test Runner status per environment (ms) */
+    statusCacheDurationMs: z.number().min(0).max(3600000).default(300000)
   })
 });
 
@@ -143,6 +153,10 @@ export class ConfigurationService {
       environment: {
         ...fileConfig.environment,
         ...envOverrides.environment
+      },
+      testRunner: {
+        ...fileConfig.testRunner,
+        ...envOverrides.testRunner
       }
     };
 
@@ -271,6 +285,17 @@ export class ConfigurationService {
       overrides.environment = {
         defaultAuthMethod: process.env.DEFAULT_AUTH_METHOD as Config['environment']['defaultAuthMethod']
       };
+    }
+
+    // Test Runner overrides
+    if (process.env.TEST_RUNNER_SOURCE_PATH || process.env.TEST_RUNNER_AUTO_INSTALL !== undefined) {
+      overrides.testRunner = {};
+      if (process.env.TEST_RUNNER_SOURCE_PATH) {
+        overrides.testRunner.sourcePath = process.env.TEST_RUNNER_SOURCE_PATH;
+      }
+      if (process.env.TEST_RUNNER_AUTO_INSTALL !== undefined) {
+        overrides.testRunner.autoInstall = process.env.TEST_RUNNER_AUTO_INSTALL === 'true';
+      }
     }
 
     return overrides;

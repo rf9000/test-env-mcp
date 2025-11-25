@@ -3496,8 +3496,8 @@ var require_utils = __commonJS({
       return ind;
     }
     __name(findToken, "findToken");
-    function removeDotSegments(path7) {
-      let input = path7;
+    function removeDotSegments(path8) {
+      let input = path8;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3704,8 +3704,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path7, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path7 && path7 !== "/" ? path7 : void 0;
+        const [path8, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path8 && path8 !== "/" ? path8 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -3778,7 +3778,7 @@ var require_schemes = __commonJS({
         serialize: httpSerialize
       }
     );
-    var https2 = (
+    var https3 = (
       /** @type {SchemeHandler} */
       {
         scheme: "https",
@@ -3827,7 +3827,7 @@ var require_schemes = __commonJS({
       /** @type {Record<SchemeName, SchemeHandler>} */
       {
         http,
-        https: https2,
+        https: https3,
         ws,
         wss,
         urn,
@@ -7173,12 +7173,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs4, exportName) {
+    function addFormats(ajv, list, fs5, exportName) {
       var _a;
       var _b;
       (_a = (_b = ajv.opts.code).formats) !== null && _a !== void 0 ? _a : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs4[f]);
+        ajv.addFormat(f, fs5[f]);
     }
     __name(addFormats, "addFormats");
     module.exports = exports = formatsPlugin;
@@ -8049,8 +8049,8 @@ __name(getErrorMap, "getErrorMap");
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = /* @__PURE__ */ __name((params) => {
-  const { data, path: path7, errorMaps, issueData } = params;
-  const fullPath = [...path7, ...issueData.path || []];
+  const { data, path: path8, errorMaps, issueData } = params;
+  const fullPath = [...path8, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -8173,11 +8173,11 @@ var ParseInputLazyPath = class {
   static {
     __name(this, "ParseInputLazyPath");
   }
-  constructor(parent, value, path7, key) {
+  constructor(parent, value, path8, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path7;
+    this._path = path8;
     this._key = key;
   }
   get path() {
@@ -13675,6 +13675,17 @@ var TimeoutError = class extends AppError {
   code = "TIMEOUT_ERROR";
   retryable = true;
 };
+var TestRunnerInfrastructureError = class extends AppError {
+  constructor(message, phase, details) {
+    super(message, { phase, ...details });
+    this.phase = phase;
+  }
+  static {
+    __name(this, "TestRunnerInfrastructureError");
+  }
+  code = "TEST_RUNNER_INFRASTRUCTURE_ERROR";
+  retryable = true;
+};
 
 // src/services/configurationService.ts
 var __filename = fileURLToPath(import.meta.url);
@@ -13702,6 +13713,16 @@ var ConfigSchema = external_exports.object({
   }),
   environment: external_exports.object({
     defaultAuthMethod: external_exports.enum(["NavUserPassword", "Windows", "AzureAd"]).default("NavUserPassword")
+  }),
+  testRunner: external_exports.object({
+    /** Path to the Test Runner BC app source */
+    sourcePath: external_exports.string().default("C:\\GeneralDev\\MCPDevelopment\\AL Developer Tools - Continia AL Test Runner\\bc-app"),
+    /** Enable auto-installation of Test Runner when missing */
+    autoInstall: external_exports.boolean().default(true),
+    /** Schema update mode for Test Runner publication */
+    schemaUpdateMode: external_exports.enum(["synchronize", "forcesync"]).default("forcesync"),
+    /** Duration to cache Test Runner status per environment (ms) */
+    statusCacheDurationMs: external_exports.number().min(0).max(36e5).default(3e5)
   })
 });
 var ConfigurationService = class _ConfigurationService {
@@ -13768,6 +13789,10 @@ var ConfigurationService = class _ConfigurationService {
       environment: {
         ...fileConfig.environment,
         ...envOverrides.environment
+      },
+      testRunner: {
+        ...fileConfig.testRunner,
+        ...envOverrides.testRunner
       }
     };
     const config = ConfigSchema.parse(mergedConfig);
@@ -13870,6 +13895,15 @@ var ConfigurationService = class _ConfigurationService {
         defaultAuthMethod: process.env.DEFAULT_AUTH_METHOD
       };
     }
+    if (process.env.TEST_RUNNER_SOURCE_PATH || process.env.TEST_RUNNER_AUTO_INSTALL !== void 0) {
+      overrides.testRunner = {};
+      if (process.env.TEST_RUNNER_SOURCE_PATH) {
+        overrides.testRunner.sourcePath = process.env.TEST_RUNNER_SOURCE_PATH;
+      }
+      if (process.env.TEST_RUNNER_AUTO_INSTALL !== void 0) {
+        overrides.testRunner.autoInstall = process.env.TEST_RUNNER_AUTO_INSTALL === "true";
+      }
+    }
     return overrides;
   }
   /**
@@ -13925,8 +13959,8 @@ var ConfigurationService = class _ConfigurationService {
    * config.get('api.url') // 'https://...'
    * config.get('test.defaultTimeoutSeconds') // 600
    */
-  get(path7, defaultValue) {
-    const parts = path7.split(".");
+  get(path8, defaultValue) {
+    const parts = path8.split(".");
     let current = this.config;
     for (const part of parts) {
       if (current && typeof current === "object" && part in current) {
@@ -15145,7 +15179,7 @@ var EnvironmentService = class {
 import { XMLParser } from "fast-xml-parser";
 import { parse as parseCsv } from "csv-parse/sync";
 var TestRunnerService = class {
-  constructor(demoPortalClient, config, testRegistry) {
+  constructor(demoPortalClient, config, testRegistry, infrastructureService) {
     this.demoPortalClient = demoPortalClient;
     this.config = config;
     this.xmlParser = new XMLParser({
@@ -15156,6 +15190,7 @@ var TestRunnerService = class {
     });
     this.logger = Logger.getInstance();
     this.testRegistry = testRegistry || null;
+    this.infrastructureService = infrastructureService || null;
   }
   static {
     __name(this, "TestRunnerService");
@@ -15163,6 +15198,7 @@ var TestRunnerService = class {
   xmlParser;
   logger;
   testRegistry = null;
+  infrastructureService = null;
   /**
    * Run tests on a Business Central environment
    *
@@ -15177,6 +15213,28 @@ var TestRunnerService = class {
     const startTime = Date.now();
     const timeoutMs = (params.timeoutSeconds ?? 600) * 1e3;
     const signal = params.signal ?? AbortSignal.timeout(timeoutMs);
+    if (this.infrastructureService) {
+      const autoInstall = this.config.get("testRunner.autoInstall", true);
+      if (autoInstall) {
+        this.logger.info("Ensuring Test Runner infrastructure is installed", {
+          details: { environmentId: params.environmentId }
+        });
+        const ensureResult = await this.infrastructureService.ensureTestRunnerInstalled(
+          params.environmentId
+        );
+        if (ensureResult.status === "installation_failed") {
+          throw new ValidationError(
+            "Test Runner infrastructure could not be installed. " + ensureResult.message,
+            { ensureResult }
+          );
+        }
+        if (ensureResult.status === "newly_installed") {
+          this.logger.info("Test Runner was just installed", {
+            details: { message: ensureResult.message }
+          });
+        }
+      }
+    }
     if (this.testRegistry && params.workspacePath) {
       await this.validateTestsExist(params);
     }
@@ -16294,6 +16352,552 @@ Estimated Test Count: ${testInfo.estimatedTestCount}
     } catch {
       return false;
     }
+  }
+};
+
+// src/services/testRunnerInfrastructureService.ts
+import path2 from "path";
+import fs2 from "fs/promises";
+import { spawn as spawn2 } from "child_process";
+import axios3 from "axios";
+import https2 from "https";
+var TestRunnerInfrastructureService = class _TestRunnerInfrastructureService {
+  constructor(demoPortalClient, devEndpointClient, credentialsService, config) {
+    this.demoPortalClient = demoPortalClient;
+    this.devEndpointClient = devEndpointClient;
+    this.credentialsService = credentialsService;
+    this.config = config;
+    this.logger = Logger.getInstance();
+  }
+  static {
+    __name(this, "TestRunnerInfrastructureService");
+  }
+  logger;
+  statusCache = /* @__PURE__ */ new Map();
+  /** Default source path for Test Runner BC app */
+  static DEFAULT_SOURCE_PATH = "C:\\GeneralDev\\MCPDevelopment\\AL Developer Tools - Continia AL Test Runner\\bc-app";
+  /**
+   * Ensure Test Runner is installed on the target environment
+   *
+   * Main entry point - orchestrates detection and conditional installation.
+   *
+   * @param environmentId - Environment ID to check/install
+   * @returns Ensure result with status and optional install details
+   */
+  async ensureTestRunnerInstalled(environmentId) {
+    this.logger.info("Checking Test Runner infrastructure", {
+      details: { environmentId }
+    });
+    const autoInstall = this.config.get("testRunner.autoInstall", true);
+    if (!autoInstall) {
+      this.logger.info("Test Runner auto-install is disabled");
+      return {
+        status: "already_installed",
+        message: "Auto-install disabled, skipping Test Runner check"
+      };
+    }
+    const status = await this.detectStatus(environmentId);
+    if (status.installed) {
+      this.logger.info("Test Runner already installed", {
+        details: { environmentId, version: status.version, method: status.detectionMethod }
+      });
+      return {
+        status: "already_installed",
+        message: `Test Runner is installed (detected via ${status.detectionMethod})`
+      };
+    }
+    this.logger.info("Test Runner not detected, attempting installation", {
+      details: { environmentId }
+    });
+    try {
+      const installResult = await this.installTestRunner(environmentId);
+      if (installResult.success) {
+        this.statusCache.delete(environmentId);
+        this.logger.info("Test Runner installation successful", {
+          details: { environmentId, elapsedMs: installResult.elapsedMs }
+        });
+        return {
+          status: "newly_installed",
+          message: `Test Runner installed successfully in ${installResult.elapsedMs}ms`,
+          installResult
+        };
+      } else {
+        return {
+          status: "installation_failed",
+          message: "Test Runner installation failed",
+          installResult
+        };
+      }
+    } catch (error) {
+      this.logger.error("Test Runner installation failed", error, {
+        details: { environmentId }
+      });
+      return {
+        status: "installation_failed",
+        message: error instanceof Error ? error.message : "Unknown installation error"
+      };
+    }
+  }
+  /**
+   * Detect Test Runner installation status
+   *
+   * Uses a "test probe" approach:
+   * 1. Check cache first
+   * 2. Create a test job with no filters
+   * 3. Analyze the result to determine if Test Runner is installed
+   *
+   * @param environmentId - Environment ID to check
+   * @returns Detection status
+   */
+  async detectStatus(environmentId) {
+    const cached = this.statusCache.get(environmentId);
+    if (cached && Date.now() < cached.expiresAt) {
+      this.logger.debug("Using cached Test Runner status", {
+        details: { environmentId, installed: cached.status.installed }
+      });
+      return {
+        ...cached.status,
+        detectionMethod: "cached"
+      };
+    }
+    this.logger.info("Probing for Test Runner installation", {
+      details: { environmentId }
+    });
+    try {
+      const { jobId } = await this.demoPortalClient.createTestJob(
+        environmentId,
+        {},
+        { signal: AbortSignal.timeout(3e4) }
+      );
+      const result = await this.pollTestProbe(environmentId, jobId);
+      const installed = result.testsFound > 0 || result.apiSuccess;
+      const status = installed ? {
+        installed: true,
+        version: "detected",
+        detectionMethod: "test_probe",
+        checkedAt: (/* @__PURE__ */ new Date()).toISOString()
+      } : {
+        installed: false,
+        detectionMethod: "test_probe",
+        checkedAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      const cacheDurationMs = this.config.get("testRunner.statusCacheDurationMs", 3e5);
+      this.statusCache.set(environmentId, {
+        status,
+        expiresAt: Date.now() + cacheDurationMs
+      });
+      return status;
+    } catch (error) {
+      this.logger.warn("Test probe failed, assuming Test Runner not installed", {
+        details: {
+          environmentId,
+          error: error instanceof Error ? error.message : "Unknown error"
+        }
+      });
+      return {
+        installed: false,
+        detectionMethod: "test_probe",
+        checkedAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+    }
+  }
+  /**
+   * Install Test Runner on the target environment
+   *
+   * Workflow:
+   * 1. Ensure symbols are available
+   * 2. Compile the Test Runner app
+   * 3. Publish to the environment
+   * 4. Verify installation
+   *
+   * @param environmentId - Environment ID to install to
+   * @returns Installation result
+   */
+  async installTestRunner(environmentId) {
+    const startTime = Date.now();
+    const sourcePath = this.config.get(
+      "testRunner.sourcePath",
+      _TestRunnerInfrastructureService.DEFAULT_SOURCE_PATH
+    );
+    try {
+      await fs2.access(sourcePath);
+    } catch {
+      throw new TestRunnerInfrastructureError(
+        `Test Runner source path does not exist: ${sourcePath}`,
+        "compilation",
+        { sourcePath }
+      );
+    }
+    await this.ensureSymbolsAvailable(environmentId, sourcePath);
+    const compilation = await this.compileTestRunnerApp(sourcePath);
+    if (!compilation.success) {
+      return {
+        success: false,
+        compilation,
+        publication: { success: false, status: "skipped" },
+        elapsedMs: Date.now() - startTime
+      };
+    }
+    const publication = await this.publishTestRunnerApp(
+      environmentId,
+      compilation.appPath
+    );
+    return {
+      success: compilation.success && publication.success,
+      compilation,
+      publication,
+      elapsedMs: Date.now() - startTime
+    };
+  }
+  /**
+   * Poll test probe for results
+   *
+   * @param environmentId - Environment ID
+   * @param jobId - Test job ID
+   * @returns Probe results
+   */
+  async pollTestProbe(environmentId, jobId) {
+    const maxAttempts = 15;
+    let attempts = 0;
+    let delayMs = 2e3;
+    while (attempts < maxAttempts) {
+      await this.delay(delayMs);
+      try {
+        const result = await this.demoPortalClient.getTestResultsXml(
+          environmentId,
+          jobId,
+          { signal: AbortSignal.timeout(1e4) }
+        );
+        if (result.statusCode === 200 && result.xml) {
+          const testCountMatch = result.xml.match(/<testcase/g);
+          const testsFound = testCountMatch ? testCountMatch.length : 0;
+          return { testsFound, apiSuccess: true };
+        }
+      } catch {
+      }
+      attempts++;
+      delayMs = Math.min(delayMs * 1.5, 1e4);
+    }
+    return { testsFound: 0, apiSuccess: false };
+  }
+  /**
+   * Ensure symbols are available for compilation
+   *
+   * Downloads required dependencies from the BC environment.
+   *
+   * @param environmentId - Environment ID
+   * @param projectPath - Path to the Test Runner project
+   */
+  async ensureSymbolsAvailable(environmentId, projectPath) {
+    const packagesPath = path2.join(projectPath, ".alpackages");
+    await fs2.mkdir(packagesPath, { recursive: true });
+    const appJsonPath = path2.join(projectPath, "app.json");
+    const appJsonContent = await fs2.readFile(appJsonPath, "utf-8");
+    const appJson = JSON.parse(appJsonContent);
+    const environment = await this.demoPortalClient.getEnvironmentRaw(environmentId);
+    const environmentUrl = environment.url ?? "";
+    if (!environmentUrl) {
+      this.logger.warn("Environment URL not available, skipping symbol download", {
+        details: { environmentId }
+      });
+      return;
+    }
+    const auth = await this.credentialsService.getDeveloperEndpointAuth({
+      id: environmentId,
+      authenticationMethod: environment.authenticationMethod
+    });
+    const platformVersion = appJson.platform || "23.0.0.0";
+    const platformDeps = [
+      { name: "System", publisher: "Microsoft", version: platformVersion, id: "8874ed3a-0643-4247-9ced-7a7002f7135d" },
+      { name: "Application", publisher: "Microsoft", version: platformVersion, id: "00000000-0000-0000-0000-000000000000" }
+    ];
+    const dependencies = appJson.dependencies || [];
+    const allDeps = [...platformDeps, ...dependencies];
+    for (const dep of allDeps) {
+      try {
+        await this.downloadSymbol(environmentUrl, auth.authorization, dep, packagesPath);
+      } catch (error) {
+        this.logger.warn(`Failed to download symbol: ${dep.publisher}_${dep.name}`, {
+          details: { error: error instanceof Error ? error.message : "Unknown error" }
+        });
+      }
+    }
+  }
+  /**
+   * Download a symbol from the BC environment
+   *
+   * @param environmentUrl - Environment URL
+   * @param authorization - Authorization header value
+   * @param dep - Dependency to download
+   * @param packagesPath - Path to save the symbol
+   */
+  async downloadSymbol(environmentUrl, authorization, dep, packagesPath) {
+    const existingFiles = await fs2.readdir(packagesPath);
+    const pattern = `${dep.publisher}_${dep.name}_`;
+    if (existingFiles.some((f) => f.startsWith(pattern))) {
+      this.logger.debug(`Symbol already exists: ${dep.publisher}_${dep.name}`);
+      return;
+    }
+    let url = `${environmentUrl.replace(/\/$/, "")}/dev/packages?publisher=${encodeURIComponent(dep.publisher)}&appName=${encodeURIComponent(dep.name)}&versionText=${dep.version}`;
+    if (dep.id) {
+      url += `&appId=${dep.id}`;
+    }
+    this.logger.info(`Downloading symbol: ${dep.publisher}_${dep.name}`, {
+      details: { version: dep.version }
+    });
+    try {
+      const response = await axios3({
+        method: "get",
+        url,
+        headers: {
+          Authorization: authorization,
+          Accept: "application/octet-stream"
+        },
+        httpsAgent: new https2.Agent({
+          rejectUnauthorized: !this.config.get("auth.allowInsecureCertificates", false)
+        }),
+        responseType: "arraybuffer",
+        timeout: 6e4
+      });
+      const contentDisposition = response.headers["content-disposition"] || "";
+      const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+      const filename = filenameMatch ? filenameMatch[1].replace(/['"]/g, "") : `${dep.publisher}_${dep.name}_${dep.version}.app`;
+      const filePath = path2.join(packagesPath, filename);
+      await fs2.writeFile(filePath, Buffer.from(response.data));
+      this.logger.info(`Downloaded symbol: ${filename}`);
+    } catch (error) {
+      if (axios3.isAxiosError(error) && error.response?.status === 404) {
+        this.logger.warn(`Symbol not found: ${dep.publisher}_${dep.name}`);
+      } else {
+        throw error;
+      }
+    }
+  }
+  /**
+   * Compile the Test Runner app
+   *
+   * @param projectPath - Path to the Test Runner project
+   * @returns Compilation result
+   */
+  async compileTestRunnerApp(projectPath) {
+    this.logger.info("Compiling Test Runner app", { details: { projectPath } });
+    const toolCheck = await this.executeCommand("dotnet tool list -g");
+    if (!toolCheck.stdout.includes("microsoft.dynamics.businesscentral.development.tools")) {
+      throw new TestRunnerInfrastructureError(
+        "AL CLI tools not installed. Install via: dotnet tool install -g Microsoft.Dynamics.BusinessCentral.Development.Tools",
+        "compilation"
+      );
+    }
+    const appJsonPath = path2.join(projectPath, "app.json");
+    const appJsonContent = await fs2.readFile(appJsonPath, "utf-8");
+    const appJson = JSON.parse(appJsonContent);
+    const outputDir = path2.join(projectPath, "build");
+    await fs2.mkdir(outputDir, { recursive: true });
+    const appFileName = `${appJson.publisher}_${appJson.name}_${appJson.version}.app`;
+    const outputPath = path2.join(outputDir, appFileName);
+    const analyzerPath = await this.getAnalyzerPath();
+    const analyzers = [
+      path2.join(analyzerPath, "Microsoft.Dynamics.Nav.CodeCop.dll"),
+      path2.join(analyzerPath, "Microsoft.Dynamics.Nav.UICop.dll")
+    ];
+    const args = [
+      "compile",
+      `/project:"${projectPath}"`,
+      `/packagecachepath:"${path2.join(projectPath, ".alpackages")}"`,
+      `/out:"${outputPath}"`,
+      `/analyzer:"${analyzers.join(";")}"`,
+      "/continuebuildonerror:+"
+    ];
+    return new Promise((resolve2) => {
+      const child = spawn2("al", args, {
+        cwd: projectPath,
+        shell: true,
+        windowsVerbatimArguments: true
+      });
+      const diagnostics = [];
+      child.stdout.on("data", (data) => {
+        const text = data.toString();
+        this.parseDiagnostics(text, diagnostics);
+      });
+      child.stderr.on("data", () => {
+      });
+      child.on("error", (error) => {
+        resolve2({
+          success: false,
+          appPath: "",
+          diagnostics: [{
+            file: "compile",
+            line: 0,
+            column: 0,
+            severity: "error",
+            code: "COMPILE_START_FAILED",
+            message: error.message
+          }]
+        });
+      });
+      child.on("exit", async (code) => {
+        const hasErrors = diagnostics.some((d) => d.severity === "error");
+        if (code !== 0 || hasErrors) {
+          resolve2({
+            success: false,
+            appPath: outputPath,
+            diagnostics
+          });
+          return;
+        }
+        try {
+          await fs2.access(outputPath);
+          this.logger.info("Test Runner compilation successful", {
+            details: { appPath: outputPath }
+          });
+          resolve2({
+            success: true,
+            appPath: outputPath,
+            diagnostics
+          });
+        } catch {
+          resolve2({
+            success: false,
+            appPath: outputPath,
+            diagnostics: [{
+              file: "output",
+              line: 0,
+              column: 0,
+              severity: "error",
+              code: "OUTPUT_NOT_FOUND",
+              message: "Compilation completed but .app file was not created"
+            }]
+          });
+        }
+      });
+    });
+  }
+  /**
+   * Publish the Test Runner app to the environment
+   *
+   * @param environmentId - Environment ID
+   * @param appPath - Path to the compiled .app file
+   * @returns Publication result
+   */
+  async publishTestRunnerApp(environmentId, appPath) {
+    this.logger.info("Publishing Test Runner app", {
+      details: { environmentId, appPath }
+    });
+    try {
+      const environment = await this.demoPortalClient.getEnvironmentRaw(environmentId);
+      const environmentUrl = environment.url ?? "";
+      if (!environmentUrl) {
+        throw new TestRunnerInfrastructureError(
+          `Environment '${environmentId}' does not have a valid URL`,
+          "publication",
+          { environmentId }
+        );
+      }
+      const authMethod = environment.authenticationMethod ?? "NavUserPassword";
+      const schemaUpdateMode = this.config.get("testRunner.schemaUpdateMode", "forcesync");
+      const result = await this.devEndpointClient.publishApp({
+        appPath,
+        appFileName: path2.basename(appPath),
+        environmentId,
+        environmentUrl,
+        authenticationMethod: authMethod,
+        schemaUpdateMode
+      });
+      return {
+        success: result.success,
+        status: result.status
+      };
+    } catch (error) {
+      this.logger.error("Test Runner publication failed", error, {
+        details: { environmentId }
+      });
+      return {
+        success: false,
+        status: error instanceof Error ? error.message : "Publication failed"
+      };
+    }
+  }
+  /**
+   * Get path to AL analyzer DLLs
+   */
+  async getAnalyzerPath() {
+    const result = await this.executeCommand("dotnet tool list -g");
+    const match2 = result.stdout.match(
+      /microsoft\.dynamics\.businesscentral\.development\.tools\s+([\d.-]+[a-z]*)/i
+    );
+    if (!match2?.[1]) {
+      throw new TestRunnerInfrastructureError(
+        "Could not determine AL CLI tools version",
+        "compilation"
+      );
+    }
+    const version = match2[1];
+    const userProfile = process.env.USERPROFILE ?? process.env.HOME ?? "";
+    return path2.join(
+      userProfile,
+      ".dotnet",
+      "tools",
+      ".store",
+      "microsoft.dynamics.businesscentral.development.tools",
+      version,
+      "microsoft.dynamics.businesscentral.development.tools",
+      version,
+      "lib",
+      "net8.0",
+      "win-x64"
+    );
+  }
+  /**
+   * Execute a shell command
+   */
+  async executeCommand(command) {
+    return new Promise((resolve2, reject) => {
+      const child = spawn2(command, [], { shell: true });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (data) => {
+        stdout += data.toString();
+      });
+      child.stderr.on("data", (data) => {
+        stderr += data.toString();
+      });
+      child.on("exit", (code) => {
+        if (code !== 0) {
+          reject(new Error(`Command failed with exit code ${code ?? "null"}: ${stderr}`));
+        } else {
+          resolve2({ stdout, stderr });
+        }
+      });
+      child.on("error", (error) => {
+        reject(error);
+      });
+    });
+  }
+  /**
+   * Parse diagnostics from AL compiler output
+   */
+  parseDiagnostics(output, diagnostics) {
+    const lines = output.split("\n");
+    const diagnosticPattern = /^(.+?)\((\d+),(\d+)\):\s+(error|warning)\s+(\w+):\s+(.+)$/;
+    for (const line of lines) {
+      const match2 = diagnosticPattern.exec(line.trim());
+      if (match2?.[1] && match2[2] && match2[3] && match2[4] && match2[5] && match2[6]) {
+        diagnostics.push({
+          file: match2[1],
+          line: parseInt(match2[2]),
+          column: parseInt(match2[3]),
+          severity: match2[4],
+          code: match2[5],
+          message: match2[6]
+        });
+      }
+    }
+  }
+  /**
+   * Delay helper
+   */
+  delay(ms) {
+    return new Promise((resolve2) => setTimeout(resolve2, ms));
   }
 };
 
@@ -17507,8 +18111,8 @@ var DiagnoseTestsTool = class {
 };
 
 // src/tools/checkTestAppStatus.ts
-import path2 from "path";
-import fs2 from "fs/promises";
+import path3 from "path";
+import fs3 from "fs/promises";
 var CheckTestAppStatusTool = class {
   constructor(demoPortalClient) {
     this.demoPortalClient = demoPortalClient;
@@ -17540,14 +18144,14 @@ var CheckTestAppStatusTool = class {
   }
   async checkCompilationStatus(workspacePath) {
     try {
-      const appJsonPath = path2.join(workspacePath, "app.json");
-      const appJsonContent = await fs2.readFile(appJsonPath, "utf8");
+      const appJsonPath = path3.join(workspacePath, "app.json");
+      const appJsonContent = await fs3.readFile(appJsonPath, "utf8");
       const appJson = JSON.parse(appJsonContent);
-      const buildPath = path2.join(workspacePath, "build");
+      const buildPath = path3.join(workspacePath, "build");
       const appFileName = `${appJson.publisher}_${appJson.name}_${appJson.version}.app`.replace(/ /g, "_");
-      const appFilePath = path2.join(buildPath, appFileName);
+      const appFilePath = path3.join(buildPath, appFileName);
       try {
-        const stats = await fs2.stat(appFilePath);
+        const stats = await fs3.stat(appFilePath);
         return {
           appFileExists: true,
           appFilePath,
@@ -17572,9 +18176,9 @@ var CheckTestAppStatusTool = class {
     try {
       const alFiles = [];
       const scanDirectory = /* @__PURE__ */ __name(async (dir) => {
-        const entries = await fs2.readdir(dir, { withFileTypes: true });
+        const entries = await fs3.readdir(dir, { withFileTypes: true });
         for (const entry of entries) {
-          const fullPath = path2.join(dir, entry.name);
+          const fullPath = path3.join(dir, entry.name);
           if (entry.isDirectory() && entry.name !== ".alpackages" && entry.name !== "build") {
             await scanDirectory(fullPath);
           } else if (entry.isFile() && entry.name.endsWith(".al")) {
@@ -17584,7 +18188,7 @@ var CheckTestAppStatusTool = class {
       }, "scanDirectory");
       await scanDirectory(workspacePath);
       for (const filePath of alFiles) {
-        const content = await fs2.readFile(filePath, "utf8");
+        const content = await fs3.readFile(filePath, "utf8");
         const codeunitMatch = content.match(/codeunit\s+(\d+)\s+"?([^"{\n]+)"?\s*{/i);
         if (codeunitMatch?.[2]) {
           const codeunitId = codeunitMatch[1];
@@ -17765,7 +18369,7 @@ var Logger2 = class {
 };
 
 // src/tools/listTests.ts
-import * as path3 from "path";
+import * as path4 from "path";
 var ListTestsInputSchema = external_exports.object({
   workspacePath: external_exports.string().optional().describe("Path to the workspace containing AL test files. If not provided, uses current working directory."),
   forceRefresh: external_exports.boolean().optional().default(false).describe("Force a fresh scan of test files, bypassing cache"),
@@ -17805,7 +18409,7 @@ async function executeListTests(registry, input) {
   const startTime = Date.now();
   try {
     const params = ListTestsInputSchema.parse(input || {});
-    const workspacePath = params.workspacePath ? path3.resolve(params.workspacePath) : process.cwd();
+    const workspacePath = params.workspacePath ? path4.resolve(params.workspacePath) : process.cwd();
     logger.info(`Listing tests in workspace: ${workspacePath}`);
     logger.info(`Options: forceRefresh=${params.forceRefresh}, includeDetails=${params.includeDetails}`);
     const testCodeunits = await registry.getTestCodeunits(workspacePath, params.forceRefresh);
@@ -17858,8 +18462,8 @@ async function executeListTests(registry, input) {
 __name(executeListTests, "executeListTests");
 
 // src/alFileScanner.ts
-import * as fs3 from "fs/promises";
-import * as path5 from "path";
+import * as fs4 from "fs/promises";
+import * as path6 from "path";
 
 // node_modules/minimatch/dist/esm/index.js
 var import_brace_expansion = __toESM(require_brace_expansion(), 1);
@@ -18535,11 +19139,11 @@ var qmarksTestNoExtDot = /* @__PURE__ */ __name(([$0]) => {
   return (f) => f.length === len && f !== "." && f !== "..";
 }, "qmarksTestNoExtDot");
 var defaultPlatform = typeof process === "object" && process ? typeof process.env === "object" && process.env && process.env.__MINIMATCH_TESTING_PLATFORM__ || process.platform : "posix";
-var path4 = {
+var path5 = {
   win32: { sep: "\\" },
   posix: { sep: "/" }
 };
-var sep = defaultPlatform === "win32" ? path4.win32.sep : path4.posix.sep;
+var sep = defaultPlatform === "win32" ? path5.win32.sep : path5.posix.sep;
 minimatch.sep = sep;
 var GLOBSTAR = Symbol("globstar **");
 minimatch.GLOBSTAR = GLOBSTAR;
@@ -21756,12 +22360,12 @@ var PathBase = class {
   /**
    * Get the Path object referenced by the string path, resolved from this Path
    */
-  resolve(path7) {
-    if (!path7) {
+  resolve(path8) {
+    if (!path8) {
       return this;
     }
-    const rootPath = this.getRootString(path7);
-    const dir = path7.substring(rootPath.length);
+    const rootPath = this.getRootString(path8);
+    const dir = path8.substring(rootPath.length);
     const dirParts = dir.split(this.splitSep);
     const result = rootPath ? this.getRoot(rootPath).#resolveParts(dirParts) : this.#resolveParts(dirParts);
     return result;
@@ -22516,8 +23120,8 @@ var PathWin32 = class _PathWin32 extends PathBase {
   /**
    * @internal
    */
-  getRootString(path7) {
-    return win32.parse(path7).root;
+  getRootString(path8) {
+    return win32.parse(path8).root;
   }
   /**
    * @internal
@@ -22566,8 +23170,8 @@ var PathPosix = class _PathPosix extends PathBase {
   /**
    * @internal
    */
-  getRootString(path7) {
-    return path7.startsWith("/") ? "/" : "";
+  getRootString(path8) {
+    return path8.startsWith("/") ? "/" : "";
   }
   /**
    * @internal
@@ -22619,8 +23223,8 @@ var PathScurryBase = class {
    *
    * @internal
    */
-  constructor(cwd = process.cwd(), pathImpl, sep2, { nocase, childrenCacheSize = 16 * 1024, fs: fs4 = defaultFS } = {}) {
-    this.#fs = fsFromOption(fs4);
+  constructor(cwd = process.cwd(), pathImpl, sep2, { nocase, childrenCacheSize = 16 * 1024, fs: fs5 = defaultFS } = {}) {
+    this.#fs = fsFromOption(fs5);
     if (cwd instanceof URL || cwd.startsWith("file://")) {
       cwd = fileURLToPath2(cwd);
     }
@@ -22659,11 +23263,11 @@ var PathScurryBase = class {
   /**
    * Get the depth of a provided path, string, or the cwd
    */
-  depth(path7 = this.cwd) {
-    if (typeof path7 === "string") {
-      path7 = this.cwd.resolve(path7);
+  depth(path8 = this.cwd) {
+    if (typeof path8 === "string") {
+      path8 = this.cwd.resolve(path8);
     }
-    return path7.depth();
+    return path8.depth();
   }
   /**
    * Return the cache of child entries.  Exposed so subclasses can create
@@ -23150,9 +23754,9 @@ var PathScurryBase = class {
     process3();
     return results;
   }
-  chdir(path7 = this.cwd) {
+  chdir(path8 = this.cwd) {
     const oldCwd = this.cwd;
-    this.cwd = typeof path7 === "string" ? this.cwd.resolve(path7) : path7;
+    this.cwd = typeof path8 === "string" ? this.cwd.resolve(path8) : path8;
     this.cwd[setAsCwd](oldCwd);
   }
 };
@@ -23181,8 +23785,8 @@ var PathScurryWin32 = class extends PathScurryBase {
   /**
    * @internal
    */
-  newRoot(fs4) {
-    return new PathWin32(this.rootPath, IFDIR, void 0, this.roots, this.nocase, this.childrenCache(), { fs: fs4 });
+  newRoot(fs5) {
+    return new PathWin32(this.rootPath, IFDIR, void 0, this.roots, this.nocase, this.childrenCache(), { fs: fs5 });
   }
   /**
    * Return true if the provided path string is an absolute path
@@ -23213,8 +23817,8 @@ var PathScurryPosix = class extends PathScurryBase {
   /**
    * @internal
    */
-  newRoot(fs4) {
-    return new PathPosix(this.rootPath, IFDIR, void 0, this.roots, this.nocase, this.childrenCache(), { fs: fs4 });
+  newRoot(fs5) {
+    return new PathPosix(this.rootPath, IFDIR, void 0, this.roots, this.nocase, this.childrenCache(), { fs: fs5 });
   }
   /**
    * Return true if the provided path string is an absolute path
@@ -23529,8 +24133,8 @@ var MatchRecord = class {
   }
   // match, absolute, ifdir
   entries() {
-    return [...this.store.entries()].map(([path7, n]) => [
-      path7,
+    return [...this.store.entries()].map(([path8, n]) => [
+      path8,
       !!(n & 2),
       !!(n & 1)
     ]);
@@ -23744,9 +24348,9 @@ var GlobUtil = class {
   signal;
   maxDepth;
   includeChildMatches;
-  constructor(patterns, path7, opts) {
+  constructor(patterns, path8, opts) {
     this.patterns = patterns;
-    this.path = path7;
+    this.path = path8;
     this.opts = opts;
     this.#sep = !opts.posix && opts.platform === "win32" ? "\\" : "/";
     this.includeChildMatches = opts.includeChildMatches !== false;
@@ -23765,11 +24369,11 @@ var GlobUtil = class {
       });
     }
   }
-  #ignored(path7) {
-    return this.seen.has(path7) || !!this.#ignore?.ignored?.(path7);
+  #ignored(path8) {
+    return this.seen.has(path8) || !!this.#ignore?.ignored?.(path8);
   }
-  #childrenIgnored(path7) {
-    return !!this.#ignore?.childrenIgnored?.(path7);
+  #childrenIgnored(path8) {
+    return !!this.#ignore?.childrenIgnored?.(path8);
   }
   // backpressure mechanism
   pause() {
@@ -23987,8 +24591,8 @@ var GlobWalker = class extends GlobUtil {
     __name(this, "GlobWalker");
   }
   matches = /* @__PURE__ */ new Set();
-  constructor(patterns, path7, opts) {
-    super(patterns, path7, opts);
+  constructor(patterns, path8, opts) {
+    super(patterns, path8, opts);
   }
   matchEmit(e) {
     this.matches.add(e);
@@ -24028,8 +24632,8 @@ var GlobStream = class extends GlobUtil {
     __name(this, "GlobStream");
   }
   results;
-  constructor(patterns, path7, opts) {
-    super(patterns, path7, opts);
+  constructor(patterns, path8, opts) {
+    super(patterns, path8, opts);
     this.results = new Minipass({
       signal: this.signal,
       objectMode: true
@@ -24349,7 +24953,7 @@ var ALFileScanner = class {
   async scanWorkspaceForALFiles(workspacePath, testCodeunitsOnly = false) {
     this.logger.info(`Scanning workspace for AL files: ${workspacePath}`);
     try {
-      const pattern = path5.join(workspacePath, "**/*.al").replace(/\\/g, "/");
+      const pattern = path6.join(workspacePath, "**/*.al").replace(/\\/g, "/");
       const files = await glob(pattern, {
         ignore: ["**/node_modules/**", "**/.git/**", "**/.alpackages/**"],
         nodir: true
@@ -24358,7 +24962,7 @@ var ALFileScanner = class {
       const alFiles = [];
       for (const filePath of files) {
         try {
-          const content = await fs3.readFile(filePath, "utf-8");
+          const content = await fs4.readFile(filePath, "utf-8");
           if (testCodeunitsOnly && !this.isTestCodeunit(content)) {
             continue;
           }
@@ -24543,7 +25147,7 @@ var ALFileScanner = class {
 };
 
 // src/testRegistry.ts
-import * as path6 from "path";
+import * as path7 from "path";
 var TestRegistry = class {
   static {
     __name(this, "TestRegistry");
@@ -24571,7 +25175,7 @@ var TestRegistry = class {
    * @returns Array of test codeunits
    */
   async getTestCodeunits(workspacePath, forceRefresh = false) {
-    const normalizedPath = path6.normalize(workspacePath);
+    const normalizedPath = path7.normalize(workspacePath);
     if (!forceRefresh) {
       const cached = this.cache.get(normalizedPath);
       if (cached && this.isCacheValid(cached)) {
@@ -24710,7 +25314,7 @@ ${"\u2500".repeat(40)}
         }
       }
     }
-    const cached = this.cache.get(path6.normalize(workspacePath));
+    const cached = this.cache.get(path7.normalize(workspacePath));
     if (cached) {
       inventory += `
 ${"\u2500".repeat(40)}
@@ -24730,7 +25334,7 @@ ${"\u2500".repeat(40)}
    */
   clearCache(workspacePath) {
     if (workspacePath) {
-      const normalizedPath = path6.normalize(workspacePath);
+      const normalizedPath = path7.normalize(workspacePath);
       this.cache.delete(normalizedPath);
       this.logger.info(`Cleared cache for ${normalizedPath}`);
     } else {
@@ -24921,10 +25525,21 @@ async function main() {
     const logger = new Logger2("Main");
     const testRegistry = new TestRegistry(logger);
     const environmentService = new EnvironmentService(demoPortalClient);
-    const testRunnerService = new TestRunnerService(demoPortalClient, config, testRegistry);
     const credentialsService = new CredentialsService(demoPortalClient, config);
     const devEndpointClient = new DeveloperEndpointClient(credentialsService);
     const compilationService = new CompilationService(demoPortalClient, devEndpointClient);
+    const testRunnerInfrastructureService = new TestRunnerInfrastructureService(
+      demoPortalClient,
+      devEndpointClient,
+      credentialsService,
+      config
+    );
+    const testRunnerService = new TestRunnerService(
+      demoPortalClient,
+      config,
+      testRegistry,
+      testRunnerInfrastructureService
+    );
     const diagnoseTestsTool = new DiagnoseTestsTool(testRunnerService, testRegistry);
     const checkTestAppStatusTool = new CheckTestAppStatusTool(demoPortalClient);
     const diagnoseTestsToolDefinition = {

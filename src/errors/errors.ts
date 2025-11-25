@@ -198,3 +198,27 @@ export class TimeoutError extends AppError {
     super(message, details);
   }
 }
+
+/**
+ * Test Runner Infrastructure errors
+ *
+ * Used for:
+ * - Test Runner detection failures
+ * - Test Runner compilation failures
+ * - Test Runner publication failures
+ * - Test Runner verification failures
+ *
+ * IS retryable - infrastructure issues may be transient
+ */
+export class TestRunnerInfrastructureError extends AppError {
+  readonly code = 'TEST_RUNNER_INFRASTRUCTURE_ERROR';
+  readonly retryable = true;
+
+  constructor(
+    message: string,
+    public readonly phase: 'detection' | 'compilation' | 'publication' | 'verification',
+    details?: Record<string, unknown>
+  ) {
+    super(message, { phase, ...details });
+  }
+}

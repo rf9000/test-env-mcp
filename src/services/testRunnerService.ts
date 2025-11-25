@@ -15,6 +15,7 @@ import { XMLParser } from 'fast-xml-parser';
 import { parse as parseCsv } from 'csv-parse/sync';
 import type { DemoPortalClient } from '@/api/demoPortalClient.js';
 import type { ConfigurationService } from '@/services/configurationService.js';
+import type { TestRunnerInfrastructureService } from '@/services/testRunnerInfrastructureService.js';
 import { NotFoundError, TimeoutError, ValidationError } from '@/errors/errors.js';
 import { Logger } from '@/utils/logger.js';
 import { TestRegistry } from '@/testRegistry.js';
@@ -112,14 +113,16 @@ export class TestRunnerService {
   private xmlParser: XMLParser;
   private logger: Logger;
   private testRegistry: TestRegistry | null = null;
+  private infrastructureService: TestRunnerInfrastructureService | null = null;
 
   constructor(
     // eslint-disable-next-line no-unused-vars
     private readonly demoPortalClient: DemoPortalClient,
     // eslint-disable-next-line no-unused-vars
     private readonly config: ConfigurationService,
-     
-    testRegistry?: TestRegistry
+
+    testRegistry?: TestRegistry,
+    infrastructureService?: TestRunnerInfrastructureService
   ) {
     // Configure XML parser for JUnit format
     this.xmlParser = new XMLParser({
@@ -134,6 +137,9 @@ export class TestRunnerService {
 
     // Store test registry if provided
     this.testRegistry = testRegistry || null;
+
+    // Store infrastructure service if provided
+    this.infrastructureService = infrastructureService || null;
   }
 
   /**
@@ -150,6 +156,33 @@ export class TestRunnerService {
     const startTime = Date.now();
     const timeoutMs = (params.timeoutSeconds ?? 600) * 1000;
     const signal = params.signal ?? AbortSignal.timeout(timeoutMs);
+
+    // Ensure Test Runner infrastructure is installed (if service is available)
+    if (this.infrastructureService) {
+      const autoInstall = this.config.get('testRunner.autoInstall', true);
+      if (autoInstall) {
+        this.logger.info('Ensuring Test Runner infrastructure is installed', {
+          details: { environmentId: params.environmentId }
+        });
+
+        const ensureResult = await this.infrastructureService.ensureTestRunnerInstalled(
+          params.environmentId
+        );
+
+        if (ensureResult.status === 'installation_failed') {
+          throw new ValidationError(
+            'Test Runner infrastructure could not be installed. ' + ensureResult.message,
+            { ensureResult }
+          );
+        }
+
+        if (ensureResult.status === 'newly_installed') {
+          this.logger.info('Test Runner was just installed', {
+            details: { message: ensureResult.message }
+          });
+        }
+      }
+    }
 
     // Validate tests exist in workspace if registry is available
     if (this.testRegistry && params.workspacePath) {
