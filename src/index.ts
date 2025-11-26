@@ -72,6 +72,14 @@ import {
   listTestsToolDefinition,
   executeListTests
 } from './tools/listTests.js';
+import {
+  listAvailableAppsTool,
+  executeListAvailableApps
+} from './tools/listAvailableApps.js';
+import {
+  installAppTool,
+  executeInstallApp
+} from './tools/installApp.js';
 import { TestRegistry } from './testRegistry.js';
 import { Logger } from './logger.js';
 
@@ -270,7 +278,9 @@ async function main(): Promise<void> {
           compileAndPublishToolDefinition,
           diagnoseTestsToolDefinition,
           checkTestAppStatusToolDefinition,
-          listTestsToolDefinition
+          listTestsToolDefinition,
+          listAvailableAppsTool,
+          installAppTool
         ]
       };
     });
@@ -341,6 +351,20 @@ async function main(): Promise<void> {
           case 'list_tests':
             result = await executeListTests(
               testRegistry,
+              (args || {}) as never
+            );
+            break;
+
+          case 'list_available_apps':
+            result = await executeListAvailableApps(
+              demoPortalClient,
+              (args || {}) as never
+            );
+            break;
+
+          case 'install_app':
+            result = await executeInstallApp(
+              demoPortalClient,
               (args || {}) as never
             );
             break;

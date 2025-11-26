@@ -58,6 +58,8 @@ export interface CompileAndPublishParams {
   rulesetPath?: string | undefined;
   /** Schema update mode for publishing */
   schemaUpdateMode?: 'synchronize' | 'recreate' | 'forcesync' | undefined;
+  /** Dependency publishing option: default, strict (enforce all), ignore (skip missing) */
+  dependencyPublishingOption?: 'default' | 'strict' | 'ignore' | undefined;
 }
 
 /**
@@ -167,7 +169,8 @@ export class CompilationService {
       environmentId: params.environmentId,
       environmentUrl,
       authenticationMethod: authMethod,
-      schemaUpdateMode: params.schemaUpdateMode ?? 'synchronize'
+      schemaUpdateMode: params.schemaUpdateMode ?? 'synchronize',
+      dependencyPublishingOption: params.dependencyPublishingOption
     });
 
     // Phase 5: Verify publication (optional, only if publish succeeded)

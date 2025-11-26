@@ -38,6 +38,12 @@ export const CompileAndPublishInputSchema = z
       .default('synchronize')
       .describe(
         'Schema update mode: synchronize (default) = safe update, recreate = drop+recreate tables, forcesync = force synchronization'
+      ),
+    dependencyPublishingOption: z
+      .enum(['default', 'strict', 'ignore'])
+      .optional()
+      .describe(
+        'Dependency publishing option: default = standard handling, strict = enforce all dependencies, ignore = skip missing dependencies'
       )
   })
   .strict();
@@ -223,6 +229,12 @@ Publishing Errors:
         enum: ['synchronize', 'recreate', 'forcesync'],
         description:
           'Schema update mode: synchronize (default) = safe update, recreate = drop+recreate tables, forcesync = force synchronization'
+      },
+      dependencyPublishingOption: {
+        type: 'string',
+        enum: ['default', 'strict', 'ignore'],
+        description:
+          'Dependency publishing option: default = standard handling, strict = enforce all dependencies, ignore = skip missing dependencies'
       }
     },
     required: ['workspacePath', 'environmentId']
@@ -250,7 +262,8 @@ export async function executeCompileAndPublish(
       environmentId: validated.environmentId,
       packageCachePath: validated.packageCachePath,
       rulesetPath: validated.rulesetPath,
-      schemaUpdateMode: validated.schemaUpdateMode
+      schemaUpdateMode: validated.schemaUpdateMode,
+      dependencyPublishingOption: validated.dependencyPublishingOption
     });
 
     return result;

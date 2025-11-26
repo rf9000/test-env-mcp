@@ -35,6 +35,8 @@ export interface PublishAppParams {
   authenticationMethod?: string | undefined;
   /** Schema update mode: synchronize (default), recreate, forcesync */
   schemaUpdateMode?: 'synchronize' | 'recreate' | 'forcesync' | undefined;
+  /** Dependency publishing option: default, strict (enforce all), ignore (skip missing) */
+  dependencyPublishingOption?: 'default' | 'strict' | 'ignore' | undefined;
 }
 
 /**
@@ -101,7 +103,8 @@ export class DeveloperEndpointClient {
         // Build Developer Endpoint URL
         const url = this.buildDeveloperEndpointUrl(
           params.environmentUrl,
-          params.schemaUpdateMode ?? 'synchronize'
+          params.schemaUpdateMode ?? 'synchronize',
+          params.dependencyPublishingOption
         );
 
         // Configure HTTPS agent
@@ -196,15 +199,17 @@ export class DeveloperEndpointClient {
   /**
    * Build Developer Endpoint URL
    *
-   * Format: {baseUrl}/dev/apps?tenant={tenant}&SchemaUpdateMode={mode}
+   * Format: {baseUrl}/dev/apps?tenant={tenant}&SchemaUpdateMode={mode}&DependencyPublishingOption={option}
    *
    * @param environmentUrl - Base environment URL
    * @param schemaUpdateMode - Schema update mode
+   * @param dependencyPublishingOption - Optional dependency publishing option
    * @returns Complete Developer Endpoint URL
    */
   private buildDeveloperEndpointUrl(
     environmentUrl: string,
-    schemaUpdateMode: string
+    schemaUpdateMode: string,
+    dependencyPublishingOption?: string
   ): string {
     const baseUrl = new URL(environmentUrl);
     const tenant = this.credentialsService.getDevTenant();
@@ -212,7 +217,13 @@ export class DeveloperEndpointClient {
     // Preserve pathname, remove trailing slash
     const basePath = `${baseUrl.origin}${baseUrl.pathname.replace(/\/$/, '')}`;
 
-    return `${basePath}/dev/apps?tenant=${tenant}&SchemaUpdateMode=${schemaUpdateMode}`;
+    let url = `${basePath}/dev/apps?tenant=${tenant}&SchemaUpdateMode=${schemaUpdateMode}`;
+
+    if (dependencyPublishingOption) {
+      url += `&DependencyPublishingOption=${dependencyPublishingOption}`;
+    }
+
+    return url;
   }
 
   /**

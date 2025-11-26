@@ -3,12 +3,39 @@ import { NotFoundError } from '../errors/errors.js';
 import { Logger } from '../utils/logger.js';
 
 /**
+ * App from the Demo Portal catalog
+ *
+ * Represents a pre-built app available for installation from the Demo Portal.
+ */
+export interface CatalogApp {
+  /** Internal ID in Demo Portal */
+  id: string;
+  /** Target platform: 'cloud' or 'onprem' */
+  target: string;
+  /** Business Central version (e.g., "24.0") */
+  bcVersion: string;
+  /** App GUID from app.json */
+  appId: string;
+  /** App name */
+  name: string;
+  /** App publisher */
+  publisher: string;
+  /** App version (e.g., "1.0.0.0") */
+  version: string;
+  /** Download URL for the app */
+  url: string;
+  /** Product ID if applicable */
+  productId: string;
+}
+
+/**
  * Client for interacting with the Continia Demo Portal API
  *
  * Provides methods for:
  * - Environment management (list, get, patch)
  * - User management (list, create)
  * - Test execution (create jobs, get results, get coverage)
+ * - App catalog management (list available apps, install apps)
  *
  * All methods return raw API responses for transformation by service layer.
  */
@@ -391,6 +418,109 @@ export class DemoPortalClient {
           throw new NotFoundError(
             `Code coverage data not found for test job '${jobId}'`,
             { environmentId, jobId }
+          );
+        }
+      }
+      throw error;
+    }
+  }
+
+  // ============================================
+  // App Catalog Management
+  // ============================================
+
+  /**
+   * Get available apps from the Demo Portal catalog
+   *
+   * Retrieves a list of pre-built apps available for installation,
+   * filtered by Business Central version and target platform.
+   *
+   * @param bcVersion - Business Central version (e.g., "24.0")
+   * @param target - Target platform: 'cloud' or 'onprem'
+   * @returns Array of available apps from the catalog
+   * @throws {AuthError} If authentication fails
+   * @throws {NetworkError} If network request fails
+   */
+  async getAvailableApps(bcVersion: string, target: string): Promise<CatalogApp[]> {
+    const response = await this.httpClient.get('/apps.json', {
+      params: {
+        bc_version: bcVersion,
+        target: target
+      }
+    });
+
+    if (!Array.isArray(response.data)) {
+      throw new Error('Expected array response from /apps.json');
+    }
+
+    return response.data as CatalogApp[];
+  }
+
+  /**
+   * Get apps installed on an environment
+   *
+   * Retrieves a list of apps currently installed on the specified environment.
+   *
+   * @param environmentId - The environment ID
+   * @returns Array of installed apps
+   * @throws {NotFoundError} If environment doesn't exist
+   * @throws {AuthError} If authentication fails
+   * @throws {NetworkError} If network request fails
+   */
+  async getEnvironmentApps(environmentId: string): Promise<CatalogApp[]> {
+    try {
+      const response = await this.httpClient.get(
+        `/environments/${environmentId}/apps.json`
+      );
+
+      if (!Array.isArray(response.data)) {
+        throw new Error('Expected array response from apps endpoint');
+      }
+
+      return response.data as CatalogApp[];
+    } catch (error: unknown) {
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { status?: number } };
+        if (axiosError.response?.status === 404) {
+          throw new NotFoundError(
+            `Environment '${environmentId}' not found`,
+            { environmentId }
+          );
+        }
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Install apps to an environment
+   *
+   * Installs one or more apps from the Demo Portal catalog to the specified environment.
+   *
+   * @param environmentId - The environment ID
+   * @param apps - Array of apps to install (from catalog)
+   * @returns true if installation succeeded
+   * @throws {NotFoundError} If environment doesn't exist
+   * @throws {AuthError} If authentication fails
+   * @throws {ValidationError} If app data is invalid
+   * @throws {NetworkError} If network request fails
+   */
+  async installApps(environmentId: string, apps: CatalogApp[]): Promise<boolean> {
+    try {
+      const response = await this.httpClient.post(
+        `/environments/${environmentId}/apps.json`,
+        apps
+      );
+
+      // Success is typically 200-299 status
+      return response.status >= 200 && response.status < 300;
+    } catch (error: unknown) {
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { status?: number } };
+        if (axiosError.response?.status === 404) {
+          throw new NotFoundError(
+            `Environment '${environmentId}' not found`,
+            { environmentId }
           );
         }
       }

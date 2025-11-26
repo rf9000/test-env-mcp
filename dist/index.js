@@ -14677,6 +14677,99 @@ var DemoPortalClient = class {
       throw error;
     }
   }
+  // ============================================
+  // App Catalog Management
+  // ============================================
+  /**
+   * Get available apps from the Demo Portal catalog
+   *
+   * Retrieves a list of pre-built apps available for installation,
+   * filtered by Business Central version and target platform.
+   *
+   * @param bcVersion - Business Central version (e.g., "24.0")
+   * @param target - Target platform: 'cloud' or 'onprem'
+   * @returns Array of available apps from the catalog
+   * @throws {AuthError} If authentication fails
+   * @throws {NetworkError} If network request fails
+   */
+  async getAvailableApps(bcVersion, target) {
+    const response = await this.httpClient.get("/apps.json", {
+      params: {
+        bc_version: bcVersion,
+        target
+      }
+    });
+    if (!Array.isArray(response.data)) {
+      throw new Error("Expected array response from /apps.json");
+    }
+    return response.data;
+  }
+  /**
+   * Get apps installed on an environment
+   *
+   * Retrieves a list of apps currently installed on the specified environment.
+   *
+   * @param environmentId - The environment ID
+   * @returns Array of installed apps
+   * @throws {NotFoundError} If environment doesn't exist
+   * @throws {AuthError} If authentication fails
+   * @throws {NetworkError} If network request fails
+   */
+  async getEnvironmentApps(environmentId) {
+    try {
+      const response = await this.httpClient.get(
+        `/environments/${environmentId}/apps.json`
+      );
+      if (!Array.isArray(response.data)) {
+        throw new Error("Expected array response from apps endpoint");
+      }
+      return response.data;
+    } catch (error) {
+      if (error && typeof error === "object" && "response" in error) {
+        const axiosError = error;
+        if (axiosError.response?.status === 404) {
+          throw new NotFoundError(
+            `Environment '${environmentId}' not found`,
+            { environmentId }
+          );
+        }
+      }
+      throw error;
+    }
+  }
+  /**
+   * Install apps to an environment
+   *
+   * Installs one or more apps from the Demo Portal catalog to the specified environment.
+   *
+   * @param environmentId - The environment ID
+   * @param apps - Array of apps to install (from catalog)
+   * @returns true if installation succeeded
+   * @throws {NotFoundError} If environment doesn't exist
+   * @throws {AuthError} If authentication fails
+   * @throws {ValidationError} If app data is invalid
+   * @throws {NetworkError} If network request fails
+   */
+  async installApps(environmentId, apps) {
+    try {
+      const response = await this.httpClient.post(
+        `/environments/${environmentId}/apps.json`,
+        apps
+      );
+      return response.status >= 200 && response.status < 300;
+    } catch (error) {
+      if (error && typeof error === "object" && "response" in error) {
+        const axiosError = error;
+        if (axiosError.response?.status === 404) {
+          throw new NotFoundError(
+            `Environment '${environmentId}' not found`,
+            { environmentId }
+          );
+        }
+      }
+      throw error;
+    }
+  }
 };
 
 // src/api/developerEndpointClient.ts
@@ -14724,7 +14817,8 @@ var DeveloperEndpointClient = class {
         });
         const url = this.buildDeveloperEndpointUrl(
           params.environmentUrl,
-          params.schemaUpdateMode ?? "synchronize"
+          params.schemaUpdateMode ?? "synchronize",
+          params.dependencyPublishingOption
         );
         const httpsAgent = this.createHttpsAgent(params.environmentUrl);
         const response = await axios2.post(url, formData, {
@@ -14792,17 +14886,22 @@ var DeveloperEndpointClient = class {
   /**
    * Build Developer Endpoint URL
    *
-   * Format: {baseUrl}/dev/apps?tenant={tenant}&SchemaUpdateMode={mode}
+   * Format: {baseUrl}/dev/apps?tenant={tenant}&SchemaUpdateMode={mode}&DependencyPublishingOption={option}
    *
    * @param environmentUrl - Base environment URL
    * @param schemaUpdateMode - Schema update mode
+   * @param dependencyPublishingOption - Optional dependency publishing option
    * @returns Complete Developer Endpoint URL
    */
-  buildDeveloperEndpointUrl(environmentUrl, schemaUpdateMode) {
+  buildDeveloperEndpointUrl(environmentUrl, schemaUpdateMode, dependencyPublishingOption) {
     const baseUrl = new URL(environmentUrl);
     const tenant = this.credentialsService.getDevTenant();
     const basePath = `${baseUrl.origin}${baseUrl.pathname.replace(/\/$/, "")}`;
-    return `${basePath}/dev/apps?tenant=${tenant}&SchemaUpdateMode=${schemaUpdateMode}`;
+    let url = `${basePath}/dev/apps?tenant=${tenant}&SchemaUpdateMode=${schemaUpdateMode}`;
+    if (dependencyPublishingOption) {
+      url += `&DependencyPublishingOption=${dependencyPublishingOption}`;
+    }
+    return url;
   }
   /**
    * Create HTTPS agent with conditional certificate validation
@@ -15903,7 +16002,8 @@ var CompilationService = class {
       environmentId: params.environmentId,
       environmentUrl,
       authenticationMethod: authMethod,
-      schemaUpdateMode: params.schemaUpdateMode ?? "synchronize"
+      schemaUpdateMode: params.schemaUpdateMode ?? "synchronize",
+      dependencyPublishingOption: params.dependencyPublishingOption
     });
     let verificationStatus = void 0;
     if (publishResult.success) {
@@ -17692,6 +17792,9 @@ var CompileAndPublishInputSchema = external_exports.object({
   rulesetPath: external_exports.string().optional().describe("Optional path to .ruleset.json file (default: workspacePath/.ruleset.json)"),
   schemaUpdateMode: external_exports.enum(["synchronize", "recreate", "forcesync"]).optional().default("synchronize").describe(
     "Schema update mode: synchronize (default) = safe update, recreate = drop+recreate tables, forcesync = force synchronization"
+  ),
+  dependencyPublishingOption: external_exports.enum(["default", "strict", "ignore"]).optional().describe(
+    "Dependency publishing option: default = standard handling, strict = enforce all dependencies, ignore = skip missing dependencies"
   )
 }).strict();
 var compileAndPublishToolDefinition = {
@@ -17869,6 +17972,11 @@ Publishing Errors:
         type: "string",
         enum: ["synchronize", "recreate", "forcesync"],
         description: "Schema update mode: synchronize (default) = safe update, recreate = drop+recreate tables, forcesync = force synchronization"
+      },
+      dependencyPublishingOption: {
+        type: "string",
+        enum: ["default", "strict", "ignore"],
+        description: "Dependency publishing option: default = standard handling, strict = enforce all dependencies, ignore = skip missing dependencies"
       }
     },
     required: ["workspacePath", "environmentId"]
@@ -17882,7 +17990,8 @@ async function executeCompileAndPublish(compilationService, input) {
       environmentId: validated.environmentId,
       packageCachePath: validated.packageCachePath,
       rulesetPath: validated.rulesetPath,
-      schemaUpdateMode: validated.schemaUpdateMode
+      schemaUpdateMode: validated.schemaUpdateMode,
+      dependencyPublishingOption: validated.dependencyPublishingOption
     });
     return result;
   } catch (error) {
@@ -18460,6 +18569,363 @@ async function executeListTests(registry, input) {
   }
 }
 __name(executeListTests, "executeListTests");
+
+// src/tools/listAvailableApps.ts
+var ListAvailableAppsInputSchema = external_exports.object({
+  environmentId: external_exports.string().min(1, "environmentId is required").describe("Environment ID to determine BC version and target platform"),
+  nameFilter: external_exports.string().optional().describe("Optional filter to search apps by name (case-insensitive)")
+}).strict();
+var listAvailableAppsTool = {
+  name: "list_available_apps",
+  description: `List available apps from the Demo Portal catalog that can be installed on an environment.
+
+**Purpose:**
+Browse the Demo Portal app catalog to find pre-built apps compatible with your environment.
+The app list is filtered by the environment's Business Central version and target platform.
+
+**When to Use:**
+- Discover available apps before installation
+- Search for specific apps by name
+- Check app versions available for your BC version
+- Find app IDs needed for the install_app tool
+
+**Parameters:**
+- environmentId (required): Environment ID to determine BC version and platform
+- nameFilter (optional): Search filter for app names (case-insensitive)
+
+**Response Format:**
+Returns a JSON object with:
+- apps: Array of available apps with id, name, publisher, version, appId
+- count: Number of apps found
+- bcVersion: The BC version used for filtering
+- target: The target platform (cloud/onprem)
+- fetchedAt: Timestamp of the response
+
+**Example Response:**
+\`\`\`json
+{
+  "type": "list_available_apps_result",
+  "apps": [
+    {
+      "id": "app-123",
+      "name": "Continia Document Capture",
+      "publisher": "Continia Software",
+      "version": "14.0.0.0",
+      "appId": "12345678-1234-1234-1234-123456789012",
+      "bcVersion": "24.0",
+      "target": "cloud"
+    }
+  ],
+  "count": 1,
+  "bcVersion": "24.0",
+  "target": "cloud",
+  "fetchedAt": "2024-01-15T10:30:00Z"
+}
+\`\`\`
+
+**Error Handling:**
+- NOT_FOUND: Environment doesn't exist - use list_environments to find valid IDs
+- AUTH_ERROR: Invalid or expired API token
+- NETWORK_ERROR: Connection issues
+
+**Usage Flow:**
+1. Use list_environments to find your environment ID
+2. Call list_available_apps with the environment ID
+3. Optionally filter by name to find specific apps
+4. Use the app ID with install_app to install`,
+  inputSchema: {
+    type: "object",
+    properties: {
+      environmentId: {
+        type: "string",
+        description: "Environment ID to determine BC version and target platform"
+      },
+      nameFilter: {
+        type: "string",
+        description: "Optional filter to search apps by name (case-insensitive)"
+      }
+    },
+    required: ["environmentId"]
+  }
+};
+async function executeListAvailableApps(demoPortalClient, input) {
+  try {
+    const validated = ListAvailableAppsInputSchema.parse(input);
+    const environment = await demoPortalClient.getEnvironmentRaw(validated.environmentId);
+    const bcVersion = environment.bcVersion ?? "24.0";
+    const target = environment.platform === "onprem" ? "onprem" : "cloud";
+    let apps = await demoPortalClient.getAvailableApps(bcVersion, target);
+    if (validated.nameFilter) {
+      const filterLower = validated.nameFilter.toLowerCase();
+      apps = apps.filter(
+        (app) => app.name.toLowerCase().includes(filterLower) || app.publisher.toLowerCase().includes(filterLower)
+      );
+    }
+    const result = {
+      type: "list_available_apps_result",
+      apps: apps.map((app) => ({
+        id: app.id,
+        name: app.name,
+        publisher: app.publisher,
+        version: app.version,
+        appId: app.appId,
+        bcVersion: app.bcVersion,
+        target: app.target
+      })),
+      count: apps.length,
+      bcVersion,
+      target,
+      fetchedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    return result;
+  } catch (error) {
+    if (error instanceof AppError) {
+      return {
+        type: "error",
+        kind: error.code.toLowerCase(),
+        message: error.message,
+        retryable: error.retryable,
+        details: error.details,
+        remediation: getRemediation7(error)
+      };
+    }
+    throw error;
+  }
+}
+__name(executeListAvailableApps, "executeListAvailableApps");
+function getRemediation7(error) {
+  switch (error.code) {
+    case "NOT_FOUND":
+      return "Environment not found. Use list_environments to see available environments.";
+    case "AUTH_ERROR":
+      return "Verify DEMO_PORTAL_TOKEN environment variable is set with a valid API token.";
+    case "RATE_LIMIT": {
+      const retryAfter = error instanceof RateLimitError ? error.retryAfter : 60;
+      return `API rate limit exceeded. Wait ${retryAfter} seconds before retrying.`;
+    }
+    case "NETWORK_ERROR":
+      return "Check network connection and Demo Portal API availability.";
+    default:
+      return "Review error details and try again.";
+  }
+}
+__name(getRemediation7, "getRemediation");
+
+// src/tools/installApp.ts
+var InstallAppInputSchema = external_exports.object({
+  environmentId: external_exports.string().min(1, "environmentId is required").describe("Environment ID to install the app to"),
+  appId: external_exports.string().optional().describe("App ID from the catalog (use list_available_apps to find)"),
+  appName: external_exports.string().optional().describe("App name to search for (used if appId not provided)"),
+  publisher: external_exports.string().optional().describe("Publisher name to filter by (used with appName)")
+}).strict().refine(
+  (data) => data.appId || data.appName,
+  { message: "Either appId or appName must be provided" }
+);
+var installAppTool = {
+  name: "install_app",
+  description: `Install a pre-built app from the Demo Portal catalog to an environment.
+
+**Purpose:**
+Install apps from the Demo Portal catalog to your Business Central environment.
+You can specify the app by ID (exact match) or by name (search).
+
+**When to Use:**
+- Install a specific app by ID from list_available_apps results
+- Search and install an app by name
+- Add Continia extensions to your environment
+- Set up test environments with required apps
+
+**Parameters:**
+- environmentId (required): Target environment ID
+- appId (optional): Exact app ID from the catalog
+- appName (optional): App name to search for (if appId not provided)
+- publisher (optional): Publisher filter (used with appName)
+
+**Note:** Either appId or appName must be provided.
+
+**Response Format:**
+\`\`\`json
+{
+  "type": "install_app_result",
+  "success": true,
+  "app": {
+    "id": "app-123",
+    "name": "Continia Document Capture",
+    "publisher": "Continia Software",
+    "version": "14.0.0.0"
+  },
+  "environmentId": "env-abc123",
+  "installedAt": "2024-01-15T10:30:00Z"
+}
+\`\`\`
+
+**Error Handling:**
+- NOT_FOUND: Environment or app doesn't exist
+- VALIDATION_ERROR: Neither appId nor appName provided, or multiple matches found
+- AUTH_ERROR: Invalid or expired API token
+- NETWORK_ERROR: Connection issues
+
+**Usage Flow:**
+1. Use list_available_apps to find the app you want to install
+2. Call install_app with either:
+   - appId: Install exact app by ID
+   - appName: Search and install by name (must be unique match)
+3. Check the response for success status
+
+**Examples:**
+
+Install by ID:
+\`\`\`json
+{
+  "environmentId": "env-abc123",
+  "appId": "app-456"
+}
+\`\`\`
+
+Install by name:
+\`\`\`json
+{
+  "environmentId": "env-abc123",
+  "appName": "Document Capture"
+}
+\`\`\`
+
+Install by name and publisher:
+\`\`\`json
+{
+  "environmentId": "env-abc123",
+  "appName": "Document Capture",
+  "publisher": "Continia"
+}
+\`\`\``,
+  inputSchema: {
+    type: "object",
+    properties: {
+      environmentId: {
+        type: "string",
+        description: "Environment ID to install the app to"
+      },
+      appId: {
+        type: "string",
+        description: "App ID from the catalog (use list_available_apps to find)"
+      },
+      appName: {
+        type: "string",
+        description: "App name to search for (used if appId not provided)"
+      },
+      publisher: {
+        type: "string",
+        description: "Publisher name to filter by (used with appName)"
+      }
+    },
+    required: ["environmentId"]
+  }
+};
+async function executeInstallApp(demoPortalClient, input) {
+  try {
+    const validated = InstallAppInputSchema.parse(input);
+    const environment = await demoPortalClient.getEnvironmentRaw(validated.environmentId);
+    const bcVersion = environment.bcVersion ?? "24.0";
+    const target = environment.platform === "onprem" ? "onprem" : "cloud";
+    const availableApps = await demoPortalClient.getAvailableApps(bcVersion, target);
+    let appToInstall;
+    if (validated.appId) {
+      appToInstall = availableApps.find((app) => app.id === validated.appId);
+      if (!appToInstall) {
+        throw new NotFoundError(
+          `App with ID '${validated.appId}' not found in catalog for BC ${bcVersion} (${target})`,
+          { appId: validated.appId, bcVersion, target }
+        );
+      }
+    } else if (validated.appName) {
+      const nameLower = validated.appName.toLowerCase();
+      let matches = availableApps.filter(
+        (app) => app.name.toLowerCase().includes(nameLower)
+      );
+      if (validated.publisher && matches.length > 1) {
+        const publisherLower = validated.publisher.toLowerCase();
+        matches = matches.filter(
+          (app) => app.publisher.toLowerCase().includes(publisherLower)
+        );
+      }
+      if (matches.length === 0) {
+        throw new NotFoundError(
+          `No app found matching name '${validated.appName}'${validated.publisher ? ` from publisher '${validated.publisher}'` : ""} in catalog for BC ${bcVersion} (${target})`,
+          { appName: validated.appName, publisher: validated.publisher, bcVersion, target }
+        );
+      }
+      if (matches.length > 1) {
+        throw new ValidationError(
+          `Multiple apps found matching '${validated.appName}'. Please specify appId or add publisher filter. Found: ${matches.map((a) => `${a.name} (${a.publisher})`).join(", ")}`,
+          { matches: matches.map((a) => ({ id: a.id, name: a.name, publisher: a.publisher })) }
+        );
+      }
+      appToInstall = matches[0];
+    }
+    if (!appToInstall) {
+      throw new ValidationError(
+        "Either appId or appName must be provided",
+        { input: validated }
+      );
+    }
+    const success = await demoPortalClient.installApps(validated.environmentId, [appToInstall]);
+    if (!success) {
+      throw new Error(`Failed to install app '${appToInstall.name}' to environment`);
+    }
+    const result = {
+      type: "install_app_result",
+      success: true,
+      app: {
+        id: appToInstall.id,
+        name: appToInstall.name,
+        publisher: appToInstall.publisher,
+        version: appToInstall.version,
+        appId: appToInstall.appId
+      },
+      environmentId: validated.environmentId,
+      installedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    return result;
+  } catch (error) {
+    if (error instanceof AppError) {
+      return {
+        type: "error",
+        kind: error.code.toLowerCase(),
+        message: error.message,
+        retryable: error.retryable,
+        details: error.details,
+        remediation: getRemediation8(error)
+      };
+    }
+    throw error;
+  }
+}
+__name(executeInstallApp, "executeInstallApp");
+function getRemediation8(error) {
+  switch (error.code) {
+    case "NOT_FOUND":
+      if (error.message.includes("App")) {
+        return "Use list_available_apps to see available apps for your environment.";
+      }
+      return "Environment not found. Use list_environments to see available environments.";
+    case "VALIDATION_ERROR":
+      if (error.message.includes("Multiple apps")) {
+        return "Multiple apps matched your search. Use appId for exact match or add publisher filter.";
+      }
+      return "Provide either appId (exact) or appName (search) to identify the app.";
+    case "AUTH_ERROR":
+      return "Verify DEMO_PORTAL_TOKEN environment variable is set with a valid API token.";
+    case "RATE_LIMIT": {
+      const retryAfter = error instanceof RateLimitError ? error.retryAfter : 60;
+      return `API rate limit exceeded. Wait ${retryAfter} seconds before retrying.`;
+    }
+    case "NETWORK_ERROR":
+      return "Check network connection and Demo Portal API availability.";
+    default:
+      return "Review error details and try again.";
+  }
+}
+__name(getRemediation8, "getRemediation");
 
 // src/alFileScanner.ts
 import * as fs4 from "fs/promises";
@@ -25596,7 +26062,9 @@ async function main() {
           compileAndPublishToolDefinition,
           diagnoseTestsToolDefinition,
           checkTestAppStatusToolDefinition,
-          listTestsToolDefinition
+          listTestsToolDefinition,
+          listAvailableAppsTool,
+          installAppTool
         ]
       };
     });
@@ -25650,6 +26118,18 @@ async function main() {
           case "list_tests":
             result = await executeListTests(
               testRegistry,
+              args2 || {}
+            );
+            break;
+          case "list_available_apps":
+            result = await executeListAvailableApps(
+              demoPortalClient,
+              args2 || {}
+            );
+            break;
+          case "install_app":
+            result = await executeInstallApp(
+              demoPortalClient,
               args2 || {}
             );
             break;
