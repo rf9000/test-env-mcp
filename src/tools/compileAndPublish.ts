@@ -253,6 +253,10 @@ export async function executeCompileAndPublish(
   input: unknown
 ): Promise<unknown> {
   try {
+    // Debug: Log received input to stderr (visible in MCP server logs)
+    console.error('[compile_and_publish] Received input type:', typeof input);
+    console.error('[compile_and_publish] Received input:', JSON.stringify(input, null, 2));
+
     // Validate input
     const validated = CompileAndPublishInputSchema.parse(input);
 
@@ -268,6 +272,28 @@ export async function executeCompileAndPublish(
 
     return result;
   } catch (error) {
+    // Handle Zod validation errors with detailed debugging
+    if (error instanceof z.ZodError) {
+      const inputKeys = input && typeof input === 'object' ? Object.keys(input) : [];
+      console.error('[compile_and_publish] Validation failed. Received keys:', inputKeys);
+      console.error('[compile_and_publish] Validation errors:', JSON.stringify(error.errors, null, 2));
+
+      return {
+        type: 'error',
+        kind: 'validation_error',
+        message: error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', '),
+        retryable: false,
+        details: {
+          validationErrors: error.errors,
+          receivedInputType: typeof input,
+          receivedInputKeys: inputKeys.length > 0 ? inputKeys : 'not an object or empty',
+          receivedInput: input
+        },
+        remediation: 'Check that all required parameters are provided. Required: workspacePath, environmentId. ' +
+          'The tool received: ' + (inputKeys.length > 0 ? inputKeys.join(', ') : typeof input)
+      };
+    }
+
     if (error instanceof AppError) {
       return {
         type: 'error',

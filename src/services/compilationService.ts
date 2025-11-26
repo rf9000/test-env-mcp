@@ -135,9 +135,15 @@ export class CompilationService {
     await this.verifyAlCliTools();
 
     // Phase 2: Compile AL project
+    // Resolve package cache path with monorepo support
+    const resolvedPackageCachePath = await this.resolvePackageCachePath(
+      params.workspacePath,
+      params.packageCachePath
+    );
+
     const compileResult = await this.compile({
       projectPath: params.workspacePath,
-      packageCachePath: params.packageCachePath ?? path.join(params.workspacePath, '.alpackages'),
+      packageCachePath: resolvedPackageCachePath,
       rulesetPath: params.rulesetPath
     });
 
@@ -747,5 +753,57 @@ Estimated Test Count: ${testInfo.estimatedTestCount}
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Resolve package cache path with monorepo support
+   *
+   * Priority:
+   * 1. Explicitly provided path (always used if provided)
+   * 2. Workspace-local .alpackages (if exists)
+   * 3. Search parent directories for shared .alpackages (monorepo pattern)
+   * 4. Fallback to workspace-local (will be created if needed)
+   *
+   * @param workspacePath - AL project workspace path
+   * @param providedPath - User-provided package cache path (optional)
+   * @returns Resolved package cache path
+   */
+  private async resolvePackageCachePath(
+    workspacePath: string,
+    providedPath?: string
+  ): Promise<string> {
+    // Priority 1: If explicitly provided, always use it
+    if (providedPath) {
+      const exists = await this.fileExists(providedPath);
+      console.error(`[compile] Using provided packageCachePath: ${providedPath} (exists: ${exists})`);
+      return providedPath;
+    }
+
+    // Priority 2: Check workspace-local .alpackages
+    const localPath = path.join(workspacePath, '.alpackages');
+    if (await this.fileExists(localPath)) {
+      console.error(`[compile] Using workspace-local package cache: ${localPath}`);
+      return localPath;
+    }
+
+    // Priority 3: Search parent directories for monorepo shared .alpackages
+    let currentDir = path.dirname(workspacePath);
+    const root = path.parse(workspacePath).root;
+    const maxDepth = 5; // Limit search depth for performance
+    let depth = 0;
+
+    while (currentDir !== root && depth < maxDepth) {
+      const parentPackages = path.join(currentDir, '.alpackages');
+      if (await this.fileExists(parentPackages)) {
+        console.error(`[compile] Found monorepo package cache: ${parentPackages}`);
+        return parentPackages;
+      }
+      currentDir = path.dirname(currentDir);
+      depth++;
+    }
+
+    // Priority 4: Fallback to workspace-local (will be created if needed)
+    console.error(`[compile] No existing package cache found, using default: ${localPath}`);
+    return localPath;
   }
 }

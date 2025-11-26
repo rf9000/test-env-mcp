@@ -14816,6 +14816,7 @@ var DeveloperEndpointClient = class {
           filename: params.appFileName
         });
         const url = this.buildDeveloperEndpointUrl(
+          params.environmentId,
           params.environmentUrl,
           params.schemaUpdateMode ?? "synchronize",
           params.dependencyPublishingOption
@@ -14886,21 +14887,25 @@ var DeveloperEndpointClient = class {
   /**
    * Build Developer Endpoint URL
    *
-   * Format: {baseUrl}/dev/apps?tenant={tenant}&SchemaUpdateMode={mode}&DependencyPublishingOption={option}
+   * Format: {origin}/{environmentId}/dev/apps?tenant={tenant}&SchemaUpdateMode={mode}&DependencyPublishingOption={option}
    *
-   * @param environmentUrl - Base environment URL
+   * The environment ID (GUID) is used as the BC service instance name, following the pattern
+   * established in the Continia Environment Explorer knowledge base.
+   *
+   * @param environmentId - Environment ID (GUID) to use as service instance
+   * @param environmentUrl - Base environment URL (used to extract origin)
    * @param schemaUpdateMode - Schema update mode
    * @param dependencyPublishingOption - Optional dependency publishing option
    * @returns Complete Developer Endpoint URL
    */
-  buildDeveloperEndpointUrl(environmentUrl, schemaUpdateMode, dependencyPublishingOption) {
+  buildDeveloperEndpointUrl(environmentId, environmentUrl, schemaUpdateMode, dependencyPublishingOption) {
     const baseUrl = new URL(environmentUrl);
     const tenant = this.credentialsService.getDevTenant();
-    const basePath = `${baseUrl.origin}${baseUrl.pathname.replace(/\/$/, "")}`;
-    let url = `${basePath}/dev/apps?tenant=${tenant}&SchemaUpdateMode=${schemaUpdateMode}`;
+    let url = `${baseUrl.origin}/${environmentId}/dev/apps?tenant=${tenant}&SchemaUpdateMode=${schemaUpdateMode}`;
     if (dependencyPublishingOption) {
       url += `&DependencyPublishingOption=${dependencyPublishingOption}`;
     }
+    console.error(`[DeveloperEndpoint] Publishing to: ${url}`);
     return url;
   }
   /**
@@ -15980,9 +15985,13 @@ var CompilationService = class {
    */
   async compileAndPublish(params) {
     await this.verifyAlCliTools();
+    const resolvedPackageCachePath = await this.resolvePackageCachePath(
+      params.workspacePath,
+      params.packageCachePath
+    );
     const compileResult = await this.compile({
       projectPath: params.workspacePath,
-      packageCachePath: params.packageCachePath ?? path.join(params.workspacePath, ".alpackages"),
+      packageCachePath: resolvedPackageCachePath,
       rulesetPath: params.rulesetPath
     });
     const environmentResponse = await this.demoPortalClient.getEnvironmentRaw(
@@ -16452,6 +16461,46 @@ Estimated Test Count: ${testInfo.estimatedTestCount}
     } catch {
       return false;
     }
+  }
+  /**
+   * Resolve package cache path with monorepo support
+   *
+   * Priority:
+   * 1. Explicitly provided path (always used if provided)
+   * 2. Workspace-local .alpackages (if exists)
+   * 3. Search parent directories for shared .alpackages (monorepo pattern)
+   * 4. Fallback to workspace-local (will be created if needed)
+   *
+   * @param workspacePath - AL project workspace path
+   * @param providedPath - User-provided package cache path (optional)
+   * @returns Resolved package cache path
+   */
+  async resolvePackageCachePath(workspacePath, providedPath) {
+    if (providedPath) {
+      const exists = await this.fileExists(providedPath);
+      console.error(`[compile] Using provided packageCachePath: ${providedPath} (exists: ${exists})`);
+      return providedPath;
+    }
+    const localPath = path.join(workspacePath, ".alpackages");
+    if (await this.fileExists(localPath)) {
+      console.error(`[compile] Using workspace-local package cache: ${localPath}`);
+      return localPath;
+    }
+    let currentDir = path.dirname(workspacePath);
+    const root = path.parse(workspacePath).root;
+    const maxDepth = 5;
+    let depth = 0;
+    while (currentDir !== root && depth < maxDepth) {
+      const parentPackages = path.join(currentDir, ".alpackages");
+      if (await this.fileExists(parentPackages)) {
+        console.error(`[compile] Found monorepo package cache: ${parentPackages}`);
+        return parentPackages;
+      }
+      currentDir = path.dirname(currentDir);
+      depth++;
+    }
+    console.error(`[compile] No existing package cache found, using default: ${localPath}`);
+    return localPath;
   }
 };
 
@@ -17984,6 +18033,8 @@ Publishing Errors:
 };
 async function executeCompileAndPublish(compilationService, input) {
   try {
+    console.error("[compile_and_publish] Received input type:", typeof input);
+    console.error("[compile_and_publish] Received input:", JSON.stringify(input, null, 2));
     const validated = CompileAndPublishInputSchema.parse(input);
     const result = await compilationService.compileAndPublish({
       workspacePath: validated.workspacePath,
@@ -17995,6 +18046,24 @@ async function executeCompileAndPublish(compilationService, input) {
     });
     return result;
   } catch (error) {
+    if (error instanceof external_exports.ZodError) {
+      const inputKeys = input && typeof input === "object" ? Object.keys(input) : [];
+      console.error("[compile_and_publish] Validation failed. Received keys:", inputKeys);
+      console.error("[compile_and_publish] Validation errors:", JSON.stringify(error.errors, null, 2));
+      return {
+        type: "error",
+        kind: "validation_error",
+        message: error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join(", "),
+        retryable: false,
+        details: {
+          validationErrors: error.errors,
+          receivedInputType: typeof input,
+          receivedInputKeys: inputKeys.length > 0 ? inputKeys : "not an object or empty",
+          receivedInput: input
+        },
+        remediation: "Check that all required parameters are provided. Required: workspacePath, environmentId. The tool received: " + (inputKeys.length > 0 ? inputKeys.join(", ") : typeof input)
+      };
+    }
     if (error instanceof AppError) {
       return {
         type: "error",

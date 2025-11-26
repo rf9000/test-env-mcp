@@ -100,8 +100,9 @@ export class DeveloperEndpointClient {
           filename: params.appFileName
         });
 
-        // Build Developer Endpoint URL
+        // Build Developer Endpoint URL using environmentId as BC service instance
         const url = this.buildDeveloperEndpointUrl(
+          params.environmentId,
           params.environmentUrl,
           params.schemaUpdateMode ?? 'synchronize',
           params.dependencyPublishingOption
@@ -199,14 +200,19 @@ export class DeveloperEndpointClient {
   /**
    * Build Developer Endpoint URL
    *
-   * Format: {baseUrl}/dev/apps?tenant={tenant}&SchemaUpdateMode={mode}&DependencyPublishingOption={option}
+   * Format: {origin}/{environmentId}/dev/apps?tenant={tenant}&SchemaUpdateMode={mode}&DependencyPublishingOption={option}
    *
-   * @param environmentUrl - Base environment URL
+   * The environment ID (GUID) is used as the BC service instance name, following the pattern
+   * established in the Continia Environment Explorer knowledge base.
+   *
+   * @param environmentId - Environment ID (GUID) to use as service instance
+   * @param environmentUrl - Base environment URL (used to extract origin)
    * @param schemaUpdateMode - Schema update mode
    * @param dependencyPublishingOption - Optional dependency publishing option
    * @returns Complete Developer Endpoint URL
    */
   private buildDeveloperEndpointUrl(
+    environmentId: string,
     environmentUrl: string,
     schemaUpdateMode: string,
     dependencyPublishingOption?: string
@@ -214,15 +220,15 @@ export class DeveloperEndpointClient {
     const baseUrl = new URL(environmentUrl);
     const tenant = this.credentialsService.getDevTenant();
 
-    // Preserve pathname, remove trailing slash
-    const basePath = `${baseUrl.origin}${baseUrl.pathname.replace(/\/$/, '')}`;
-
-    let url = `${basePath}/dev/apps?tenant=${tenant}&SchemaUpdateMode=${schemaUpdateMode}`;
+    // Use environment ID as the BC service instance (per knowledge base pattern)
+    // Format: {origin}/{environmentId}/dev/apps?tenant=...
+    let url = `${baseUrl.origin}/${environmentId}/dev/apps?tenant=${tenant}&SchemaUpdateMode=${schemaUpdateMode}`;
 
     if (dependencyPublishingOption) {
       url += `&DependencyPublishingOption=${dependencyPublishingOption}`;
     }
 
+    console.error(`[DeveloperEndpoint] Publishing to: ${url}`);
     return url;
   }
 
