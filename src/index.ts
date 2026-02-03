@@ -172,7 +172,7 @@ async function main(): Promise<void> {
       try {
         await import(dep.name);
         console.error(`  ✓ ${dep.display} installed`);
-      } catch (err) {
+      } catch (_err) {
         console.error(`  ✗ ${dep.display} not found`);
       }
     }
@@ -305,7 +305,16 @@ async function main(): Promise<void> {
      */
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
       try {
+        // Debug: Log the raw request structure
+        console.error('[MCP] Raw request.params:', JSON.stringify(request.params, null, 2));
+
         const { name, arguments: args } = request.params;
+
+        // Debug: Log extracted values
+        console.error(`[MCP] Tool: ${name}`);
+        console.error(`[MCP] Args type: ${typeof args}`);
+        console.error(`[MCP] Args value: ${JSON.stringify(args, null, 2)}`);
+        console.error(`[MCP] Args keys: ${args ? Object.keys(args) : 'undefined/null'}`);
 
         // Route to appropriate tool handler
         // Note: args comes from MCP as Record<string, unknown>

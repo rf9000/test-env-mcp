@@ -26910,7 +26910,12 @@ async function main() {
     });
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
       try {
+        console.error("[MCP] Raw request.params:", JSON.stringify(request.params, null, 2));
         const { name, arguments: args2 } = request.params;
+        console.error(`[MCP] Tool: ${name}`);
+        console.error(`[MCP] Args type: ${typeof args2}`);
+        console.error(`[MCP] Args value: ${JSON.stringify(args2, null, 2)}`);
+        console.error(`[MCP] Args keys: ${args2 ? Object.keys(args2) : "undefined/null"}`);
         let result;
         switch (name) {
           case "list_environments":
