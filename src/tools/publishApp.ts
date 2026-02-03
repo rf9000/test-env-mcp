@@ -195,11 +195,19 @@ export async function executePublishApp(
 
     console.error('[publish_app] Plain input type:', typeof plainInput);
     console.error('[publish_app] Plain input keys:', plainInput && typeof plainInput === 'object' ? Object.keys(plainInput as object) : 'not an object');
-    console.error('[publish_app] Plain input environmentId:', (plainInput as Record<string, unknown>)?.environmentId);
-    console.error('[publish_app] Plain input appPath:', (plainInput as Record<string, unknown>)?.appPath);
 
-    // Validate input
+    // Manual extraction to bypass any Zod issues
+    const inputObj = plainInput as Record<string, unknown>;
+    const manualAppPath = inputObj?.appPath;
+    const manualEnvId = inputObj?.environmentId;
+
+    console.error('[publish_app] Manual extraction - appPath:', manualAppPath, 'type:', typeof manualAppPath);
+    console.error('[publish_app] Manual extraction - environmentId:', manualEnvId, 'type:', typeof manualEnvId);
+
+    // Try Zod validation
+    console.error('[publish_app] About to call Zod parse...');
     const validated = PublishAppInputSchema.parse(plainInput);
+    console.error('[publish_app] Zod parse succeeded!');
 
     // Execute publish
     const result = await compilationService.publishApp({
