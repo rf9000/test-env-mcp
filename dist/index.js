@@ -3496,8 +3496,8 @@ var require_utils = __commonJS({
       return ind;
     }
     __name(findToken, "findToken");
-    function removeDotSegments(path8) {
-      let input = path8;
+    function removeDotSegments(path9) {
+      let input = path9;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3704,8 +3704,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path8, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path8 && path8 !== "/" ? path8 : void 0;
+        const [path9, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path9 && path9 !== "/" ? path9 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -8049,8 +8049,8 @@ __name(getErrorMap, "getErrorMap");
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = /* @__PURE__ */ __name((params) => {
-  const { data, path: path8, errorMaps, issueData } = params;
-  const fullPath = [...path8, ...issueData.path || []];
+  const { data, path: path9, errorMaps, issueData } = params;
+  const fullPath = [...path9, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -8173,11 +8173,11 @@ var ParseInputLazyPath = class {
   static {
     __name(this, "ParseInputLazyPath");
   }
-  constructor(parent, value, path8, key) {
+  constructor(parent, value, path9, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path8;
+    this._path = path9;
     this._key = key;
   }
   get path() {
@@ -13959,8 +13959,8 @@ var ConfigurationService = class _ConfigurationService {
    * config.get('api.url') // 'https://...'
    * config.get('test.defaultTimeoutSeconds') // 600
    */
-  get(path8, defaultValue) {
-    const parts = path8.split(".");
+  get(path9, defaultValue) {
+    const parts = path9.split(".");
     let current = this.config;
     for (const part of parts) {
       if (current && typeof current === "object" && part in current) {
@@ -15950,9 +15950,163 @@ var CredentialsService = class {
 };
 
 // src/services/compilationService.ts
+import { spawn as spawn2 } from "child_process";
+import path2 from "path";
+import fs from "fs/promises";
+
+// src/services/powershellPublishService.ts
 import { spawn } from "child_process";
 import path from "path";
-import fs from "fs/promises";
+import { fileURLToPath as fileURLToPath2 } from "url";
+var PowerShellPublishService = class {
+  static {
+    __name(this, "PowerShellPublishService");
+  }
+  scriptPath;
+  constructor() {
+    const __dirname2 = path.dirname(fileURLToPath2(import.meta.url));
+    this.scriptPath = path.resolve(__dirname2, "../../scripts/Publish-BCApp.ps1");
+  }
+  /**
+   * Publish an AL app to Business Central using PowerShell
+   *
+   * Executes the Publish-BCApp.ps1 script with the provided parameters.
+   * The script handles all the complexity of multipart upload and authentication.
+   *
+   * @param params - Publishing parameters
+   * @returns Publishing result from PowerShell script
+   * @throws Error if PowerShell execution fails
+   */
+  async publishApp(params) {
+    return this.executeScript(params, false);
+  }
+  /**
+   * Run diagnostics for publishing without actually publishing
+   *
+   * Useful for debugging publish failures. Shows:
+   * - Constructed URL
+   * - Credentials (redacted)
+   * - Connectivity test results
+   *
+   * @param params - Publishing parameters
+   * @returns Diagnostic information
+   * @throws Error if PowerShell execution fails
+   */
+  async diagnose(params) {
+    return this.executeScript(params, true);
+  }
+  /**
+   * Execute the PowerShell script
+   *
+   * @param params - Publishing parameters
+   * @param diagnose - Whether to run in diagnose mode
+   * @returns Script result
+   */
+  executeScript(params, diagnose) {
+    return new Promise((resolve2, reject) => {
+      const args = this.buildPowerShellArgs(params, diagnose);
+      console.error(`[PowerShellPublish] Executing script: ${this.scriptPath}`);
+      console.error(`[PowerShellPublish] Parameters: ${JSON.stringify({
+        ...params,
+        password: "***REDACTED***"
+      })}`);
+      const ps = spawn("powershell.exe", [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        this.scriptPath,
+        ...args
+      ], {
+        windowsHide: true,
+        env: { ...process.env }
+      });
+      let stdout = "";
+      let stderr = "";
+      ps.stdout.on("data", (data) => {
+        stdout += data.toString();
+      });
+      ps.stderr.on("data", (data) => {
+        const message = data.toString();
+        stderr += message;
+        process.stderr.write(message);
+      });
+      ps.on("error", (error) => {
+        console.error(`[PowerShellPublish] Failed to spawn PowerShell: ${error.message}`);
+        reject(new Error(`Failed to execute PowerShell script: ${error.message}`));
+      });
+      ps.on("close", (code) => {
+        console.error(`[PowerShellPublish] Script exited with code: ${code}`);
+        try {
+          const trimmedOutput = stdout.trim();
+          if (!trimmedOutput) {
+            reject(new Error(
+              `PowerShell script produced no output. Exit code: ${code}. Stderr: ${stderr.substring(0, 500)}`
+            ));
+            return;
+          }
+          const result = JSON.parse(trimmedOutput);
+          resolve2(result);
+        } catch (parseError) {
+          console.error(`[PowerShellPublish] Failed to parse JSON output: ${stdout}`);
+          reject(new Error(
+            `Failed to parse PowerShell output as JSON. Output: ${stdout.substring(0, 500)}. Stderr: ${stderr.substring(0, 500)}`
+          ));
+        }
+      });
+    });
+  }
+  /**
+   * Build PowerShell command-line arguments
+   *
+   * @param params - Publishing parameters
+   * @param diagnose - Whether to run in diagnose mode
+   * @returns Array of command-line arguments
+   */
+  buildPowerShellArgs(params, diagnose) {
+    const args = [
+      "-AppPath",
+      params.appPath,
+      "-EnvironmentId",
+      params.environmentId,
+      "-EnvironmentUrl",
+      params.environmentUrl,
+      "-Username",
+      params.username,
+      "-Password",
+      params.password
+    ];
+    if (params.schemaUpdateMode) {
+      args.push("-SchemaUpdateMode", params.schemaUpdateMode);
+    }
+    if (params.dependencyPublishingOption) {
+      args.push("-DependencyPublishingOption", params.dependencyPublishingOption);
+    }
+    if (params.tenant) {
+      args.push("-Tenant", params.tenant);
+    }
+    if (params.allowInsecureCertificates) {
+      args.push("-AllowInsecureCertificates");
+    }
+    if (diagnose) {
+      args.push("-Diagnose");
+    }
+    return args;
+  }
+  /**
+   * Get the path to the PowerShell script
+   *
+   * Useful for manual testing/debugging.
+   *
+   * @returns Absolute path to Publish-BCApp.ps1
+   */
+  getScriptPath() {
+    return this.scriptPath;
+  }
+};
+
+// src/services/compilationService.ts
 var AppJsonSchema = external_exports.object({
   id: external_exports.string().uuid(),
   name: external_exports.string().min(1),
@@ -15960,12 +16114,26 @@ var AppJsonSchema = external_exports.object({
   version: external_exports.string().regex(/^\d+\.\d+\.\d+\.\d+$/)
 });
 var CompilationService = class {
-  constructor(demoPortalClient, devEndpointClient) {
+  constructor(demoPortalClient, devEndpointClient, credentialsService, configService) {
     this.demoPortalClient = demoPortalClient;
+    this.credentialsService = credentialsService;
+    this.configService = configService;
+    this.powershellPublishService = new PowerShellPublishService();
     this.devEndpointClient = devEndpointClient;
   }
   static {
     __name(this, "CompilationService");
+  }
+  powershellPublishService;
+  /** HTTP-based endpoint client - kept as fallback option if PowerShell fails */
+  devEndpointClient;
+  /**
+   * Get the HTTP-based developer endpoint client (for fallback publishing)
+   *
+   * @returns DeveloperEndpointClient instance
+   */
+  getDevEndpointClient() {
+    return this.devEndpointClient;
   }
   /**
    * Compile AL project and publish to BC environment
@@ -16005,15 +16173,57 @@ var CompilationService = class {
       );
     }
     const authMethod = environmentResponse.authenticationMethod ?? "NavUserPassword";
-    const publishResult = await this.devEndpointClient.publishApp({
+    const authResult = await this.credentialsService.getDeveloperEndpointAuth({
+      id: params.environmentId,
+      authenticationMethod: authMethod
+    });
+    const tenant = this.configService.get("auth.devTenant", "default");
+    const allowInsecureCerts = this.configService.get("auth.allowInsecureCertificates", false);
+    console.error(`[CompilationService] Publishing app using PowerShell script`);
+    console.error(`[CompilationService] App: ${compileResult.appPath}`);
+    console.error(`[CompilationService] Environment: ${params.environmentId}`);
+    console.error(`[CompilationService] URL: ${environmentUrl}`);
+    console.error(`[CompilationService] User: ${authResult.user.username}`);
+    const psResult = await this.powershellPublishService.publishApp({
       appPath: compileResult.appPath,
-      appFileName: path.basename(compileResult.appPath),
       environmentId: params.environmentId,
       environmentUrl,
-      authenticationMethod: authMethod,
+      username: authResult.user.username,
+      password: authResult.user.password,
       schemaUpdateMode: params.schemaUpdateMode ?? "synchronize",
-      dependencyPublishingOption: params.dependencyPublishingOption
+      dependencyPublishingOption: params.dependencyPublishingOption,
+      tenant,
+      allowInsecureCertificates: allowInsecureCerts
     });
+    const publishResult = {
+      success: psResult.success,
+      status: psResult.status,
+      schemaUpdateMode: psResult.schemaUpdateMode,
+      user: psResult.user,
+      response: psResult.response,
+      error: psResult.error
+    };
+    if (!publishResult.success) {
+      if (psResult.error?.includes("Authentication failed") || psResult.error?.includes("401")) {
+        this.credentialsService.invalidateDeveloperEndpointAuth(params.environmentId);
+        throw new AuthError(
+          `Publishing failed: ${psResult.error}. Credentials have been invalidated for retry.`,
+          {
+            environmentId: params.environmentId,
+            user: authResult.user.username,
+            url: psResult.url
+          }
+        );
+      }
+      throw new ValidationError(
+        `Publishing failed: ${psResult.error}`,
+        {
+          environmentId: params.environmentId,
+          url: psResult.url,
+          schemaUpdateMode: psResult.schemaUpdateMode
+        }
+      );
+    }
     let verificationStatus = void 0;
     if (publishResult.success) {
       const isTestApp = compileResult.testAppDetected ?? false;
@@ -16033,6 +16243,88 @@ var CompilationService = class {
       result.verificationStatus = verificationStatus;
     }
     return result;
+  }
+  /**
+   * Diagnose publishing configuration without actually publishing
+   *
+   * Useful for debugging publish failures. Shows:
+   * - Constructed URL
+   * - Credentials (password redacted)
+   * - Connectivity test results
+   * - Environment configuration
+   *
+   * @param params - Parameters for diagnosis
+   * @returns Diagnostic information
+   */
+  async diagnosePublish(params) {
+    const environmentResponse = await this.demoPortalClient.getEnvironmentRaw(
+      params.environmentId
+    );
+    const environmentUrl = environmentResponse.url ?? environmentResponse.serverInstance ?? "";
+    const authMethod = environmentResponse.authenticationMethod ?? "NavUserPassword";
+    const authResult = await this.credentialsService.getDeveloperEndpointAuth({
+      id: params.environmentId,
+      authenticationMethod: authMethod
+    });
+    const password = authResult.user.password;
+    const passwordRedacted = password.length <= 4 ? "****" : password.substring(0, 2) + "*".repeat(password.length - 4) + password.substring(password.length - 2);
+    const tenant = this.configService.get("auth.devTenant", "default");
+    const schemaUpdateMode = "synchronize";
+    const baseUrl = new URL(environmentUrl);
+    const constructedUrl = `${baseUrl.origin}/${params.environmentId}/dev/apps?tenant=${tenant}&SchemaUpdateMode=${schemaUpdateMode}`;
+    const scriptPath = this.powershellPublishService.getScriptPath();
+    let scriptExists = false;
+    try {
+      await fs.access(scriptPath);
+      scriptExists = true;
+    } catch {
+      scriptExists = false;
+    }
+    let connectivity = {
+      reachable: false
+    };
+    try {
+      const diagResult = await this.powershellPublishService.diagnose({
+        appPath: path2.join(params.workspacePath, "app.json"),
+        // Just need a file that exists
+        environmentId: params.environmentId,
+        environmentUrl,
+        username: authResult.user.username,
+        password: authResult.user.password,
+        tenant
+      });
+      if (diagResult.diagnostics?.connectivity) {
+        connectivity = diagResult.diagnostics.connectivity;
+      }
+    } catch (error) {
+      connectivity = {
+        reachable: false,
+        error: error instanceof Error ? error.message : "Unknown error"
+      };
+    }
+    return {
+      type: "publish_diagnostics",
+      environment: {
+        id: params.environmentId,
+        url: environmentUrl,
+        authMethod
+      },
+      credentials: {
+        username: authResult.user.username,
+        passwordRedacted
+      },
+      url: {
+        constructed: constructedUrl,
+        tenant,
+        schemaUpdateMode
+      },
+      connectivity,
+      powershellScript: {
+        path: scriptPath,
+        exists: scriptExists
+      },
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    };
   }
   /**
    * Verify AL CLI tools are installed
@@ -16198,7 +16490,7 @@ var CompilationService = class {
       const scanDirectory = /* @__PURE__ */ __name(async (dir) => {
         const entries = await fs.readdir(dir, { withFileTypes: true });
         for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
+          const fullPath = path2.join(dir, entry.name);
           if (entry.isDirectory() && entry.name !== ".alpackages" && entry.name !== "build") {
             await scanDirectory(fullPath);
           } else if (entry.isFile() && entry.name.endsWith(".al")) {
@@ -16259,7 +16551,7 @@ var CompilationService = class {
         { platform: process.platform }
       );
     }
-    const analyzerPath = path.join(
+    const analyzerPath = path2.join(
       userProfile,
       ".dotnet",
       "tools",
@@ -16289,25 +16581,25 @@ var CompilationService = class {
    * @throws {ValidationError} If app.json invalid or output not created
    */
   async compile(params) {
-    const appJsonPath = path.join(params.projectPath, "app.json");
+    const appJsonPath = path2.join(params.projectPath, "app.json");
     const appJsonContent = await fs.readFile(appJsonPath, "utf-8");
     const appJsonRaw = JSON.parse(appJsonContent);
     const appJson = AppJsonSchema.parse(appJsonRaw);
     const isTestApp = this.isTestApp(appJsonRaw);
-    const outputDir = path.join(params.projectPath, "build");
+    const outputDir = path2.join(params.projectPath, "build");
     await fs.mkdir(outputDir, { recursive: true });
     const appFileName = `${appJson.publisher}_${appJson.name}_${appJson.version}.app`;
-    const outputPath = path.join(outputDir, appFileName);
+    const outputPath = path2.join(outputDir, appFileName);
     const analyzerBasePath = await this.getAnalyzerPath();
     const analyzers = isTestApp ? [
       // Exclude AppSourceCop for test apps (it blocks test ID ranges)
-      path.join(analyzerBasePath, "Microsoft.Dynamics.Nav.CodeCop.dll"),
-      path.join(analyzerBasePath, "Microsoft.Dynamics.Nav.UICop.dll")
+      path2.join(analyzerBasePath, "Microsoft.Dynamics.Nav.CodeCop.dll"),
+      path2.join(analyzerBasePath, "Microsoft.Dynamics.Nav.UICop.dll")
     ] : [
       // Include all analyzers for regular apps
-      path.join(analyzerBasePath, "Microsoft.Dynamics.Nav.CodeCop.dll"),
-      path.join(analyzerBasePath, "Microsoft.Dynamics.Nav.AppSourceCop.dll"),
-      path.join(analyzerBasePath, "Microsoft.Dynamics.Nav.UICop.dll")
+      path2.join(analyzerBasePath, "Microsoft.Dynamics.Nav.CodeCop.dll"),
+      path2.join(analyzerBasePath, "Microsoft.Dynamics.Nav.AppSourceCop.dll"),
+      path2.join(analyzerBasePath, "Microsoft.Dynamics.Nav.UICop.dll")
     ];
     const args = [
       "compile",
@@ -16317,12 +16609,12 @@ var CompilationService = class {
       `/analyzer:"${analyzers.join(";")}"`,
       "/continuebuildonerror:+"
     ];
-    const rulesetPath = params.rulesetPath ?? path.join(params.projectPath, ".ruleset.json");
+    const rulesetPath = params.rulesetPath ?? path2.join(params.projectPath, ".ruleset.json");
     if (await this.fileExists(rulesetPath)) {
       args.push(`/ruleset:"${rulesetPath}"`);
     }
     return new Promise((resolve2, reject) => {
-      const child = spawn("al", args, {
+      const child = spawn2("al", args, {
         cwd: params.projectPath,
         shell: true,
         windowsVerbatimArguments: true
@@ -16401,7 +16693,7 @@ Estimated Test Count: ${testInfo.estimatedTestCount}
    */
   async executeCommand(command) {
     return new Promise((resolve2, reject) => {
-      const child = spawn(command, [], { shell: true });
+      const child = spawn2(command, [], { shell: true });
       let stdout = "";
       let stderr = "";
       child.stdout.on("data", (data) => {
@@ -16481,22 +16773,22 @@ Estimated Test Count: ${testInfo.estimatedTestCount}
       console.error(`[compile] Using provided packageCachePath: ${providedPath} (exists: ${exists})`);
       return providedPath;
     }
-    const localPath = path.join(workspacePath, ".alpackages");
+    const localPath = path2.join(workspacePath, ".alpackages");
     if (await this.fileExists(localPath)) {
       console.error(`[compile] Using workspace-local package cache: ${localPath}`);
       return localPath;
     }
-    let currentDir = path.dirname(workspacePath);
-    const root = path.parse(workspacePath).root;
+    let currentDir = path2.dirname(workspacePath);
+    const root = path2.parse(workspacePath).root;
     const maxDepth = 5;
     let depth = 0;
     while (currentDir !== root && depth < maxDepth) {
-      const parentPackages = path.join(currentDir, ".alpackages");
+      const parentPackages = path2.join(currentDir, ".alpackages");
       if (await this.fileExists(parentPackages)) {
         console.error(`[compile] Found monorepo package cache: ${parentPackages}`);
         return parentPackages;
       }
-      currentDir = path.dirname(currentDir);
+      currentDir = path2.dirname(currentDir);
       depth++;
     }
     console.error(`[compile] No existing package cache found, using default: ${localPath}`);
@@ -16505,9 +16797,9 @@ Estimated Test Count: ${testInfo.estimatedTestCount}
 };
 
 // src/services/testRunnerInfrastructureService.ts
-import path2 from "path";
+import path3 from "path";
 import fs2 from "fs/promises";
-import { spawn as spawn2 } from "child_process";
+import { spawn as spawn3 } from "child_process";
 import axios3 from "axios";
 import https2 from "https";
 var TestRunnerInfrastructureService = class _TestRunnerInfrastructureService {
@@ -16738,9 +17030,9 @@ var TestRunnerInfrastructureService = class _TestRunnerInfrastructureService {
    * @param projectPath - Path to the Test Runner project
    */
   async ensureSymbolsAvailable(environmentId, projectPath) {
-    const packagesPath = path2.join(projectPath, ".alpackages");
+    const packagesPath = path3.join(projectPath, ".alpackages");
     await fs2.mkdir(packagesPath, { recursive: true });
-    const appJsonPath = path2.join(projectPath, "app.json");
+    const appJsonPath = path3.join(projectPath, "app.json");
     const appJsonContent = await fs2.readFile(appJsonPath, "utf-8");
     const appJson = JSON.parse(appJsonContent);
     const environment = await this.demoPortalClient.getEnvironmentRaw(environmentId);
@@ -16811,7 +17103,7 @@ var TestRunnerInfrastructureService = class _TestRunnerInfrastructureService {
       const contentDisposition = response.headers["content-disposition"] || "";
       const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
       const filename = filenameMatch ? filenameMatch[1].replace(/['"]/g, "") : `${dep.publisher}_${dep.name}_${dep.version}.app`;
-      const filePath = path2.join(packagesPath, filename);
+      const filePath = path3.join(packagesPath, filename);
       await fs2.writeFile(filePath, Buffer.from(response.data));
       this.logger.info(`Downloaded symbol: ${filename}`);
     } catch (error) {
@@ -16837,28 +17129,28 @@ var TestRunnerInfrastructureService = class _TestRunnerInfrastructureService {
         "compilation"
       );
     }
-    const appJsonPath = path2.join(projectPath, "app.json");
+    const appJsonPath = path3.join(projectPath, "app.json");
     const appJsonContent = await fs2.readFile(appJsonPath, "utf-8");
     const appJson = JSON.parse(appJsonContent);
-    const outputDir = path2.join(projectPath, "build");
+    const outputDir = path3.join(projectPath, "build");
     await fs2.mkdir(outputDir, { recursive: true });
     const appFileName = `${appJson.publisher}_${appJson.name}_${appJson.version}.app`;
-    const outputPath = path2.join(outputDir, appFileName);
+    const outputPath = path3.join(outputDir, appFileName);
     const analyzerPath = await this.getAnalyzerPath();
     const analyzers = [
-      path2.join(analyzerPath, "Microsoft.Dynamics.Nav.CodeCop.dll"),
-      path2.join(analyzerPath, "Microsoft.Dynamics.Nav.UICop.dll")
+      path3.join(analyzerPath, "Microsoft.Dynamics.Nav.CodeCop.dll"),
+      path3.join(analyzerPath, "Microsoft.Dynamics.Nav.UICop.dll")
     ];
     const args = [
       "compile",
       `/project:"${projectPath}"`,
-      `/packagecachepath:"${path2.join(projectPath, ".alpackages")}"`,
+      `/packagecachepath:"${path3.join(projectPath, ".alpackages")}"`,
       `/out:"${outputPath}"`,
       `/analyzer:"${analyzers.join(";")}"`,
       "/continuebuildonerror:+"
     ];
     return new Promise((resolve2) => {
-      const child = spawn2("al", args, {
+      const child = spawn3("al", args, {
         cwd: projectPath,
         shell: true,
         windowsVerbatimArguments: true
@@ -16946,7 +17238,7 @@ var TestRunnerInfrastructureService = class _TestRunnerInfrastructureService {
       const schemaUpdateMode = this.config.get("testRunner.schemaUpdateMode", "forcesync");
       const result = await this.devEndpointClient.publishApp({
         appPath,
-        appFileName: path2.basename(appPath),
+        appFileName: path3.basename(appPath),
         environmentId,
         environmentUrl,
         authenticationMethod: authMethod,
@@ -16982,7 +17274,7 @@ var TestRunnerInfrastructureService = class _TestRunnerInfrastructureService {
     }
     const version = match2[1];
     const userProfile = process.env.USERPROFILE ?? process.env.HOME ?? "";
-    return path2.join(
+    return path3.join(
       userProfile,
       ".dotnet",
       "tools",
@@ -17001,7 +17293,7 @@ var TestRunnerInfrastructureService = class _TestRunnerInfrastructureService {
    */
   async executeCommand(command) {
     return new Promise((resolve2, reject) => {
-      const child = spawn2(command, [], { shell: true });
+      const child = spawn3(command, [], { shell: true });
       let stdout = "";
       let stderr = "";
       child.stdout.on("data", (data) => {
@@ -18113,6 +18405,143 @@ function getRemediation6(error) {
 }
 __name(getRemediation6, "getRemediation");
 
+// src/tools/diagnosePublish.ts
+var DiagnosePublishInputSchema = external_exports.object({
+  workspacePath: external_exports.string().min(1, "workspacePath is required").describe("Absolute path to AL project workspace containing app.json"),
+  environmentId: external_exports.string().min(1, "environmentId is required").describe("Environment ID to diagnose publishing for (from list_environments)")
+}).strict();
+var diagnosePublishToolDefinition = {
+  name: "diagnose_publish",
+  description: `Diagnose publishing configuration and connectivity without actually publishing.
+
+**Purpose:**
+Debug publishing failures by showing:
+- Constructed Developer Endpoint URL
+- Credentials (password redacted)
+- Connectivity test results
+- Environment configuration
+- PowerShell script location
+
+**When to Use:**
+- Publishing fails with unclear errors
+- Verifying URL construction is correct
+- Testing connectivity to Developer Endpoint
+- Debugging authentication issues
+- Before first publish to new environment
+
+**Parameters:**
+- workspacePath (required): Absolute path to AL project root (contains app.json)
+- environmentId (required): Target environment ID from list_environments
+
+**Response Format:**
+Returns structured JSON with:
+- environment: ID, URL, authentication method
+- credentials: username and redacted password
+- url: Constructed URL, tenant, schema mode
+- connectivity: Whether endpoint is reachable
+- powershellScript: Script path and existence check
+
+**Example:**
+\`\`\`json
+{
+  "workspacePath": "C:/Projects/MyALApp",
+  "environmentId": "d590df57-680e-43c0-9af0-3f97706d4663"
+}
+\`\`\`
+
+**Response Example:**
+\`\`\`json
+{
+  "type": "publish_diagnostics",
+  "environment": {
+    "id": "d590df57-680e-43c0-9af0-3f97706d4663",
+    "url": "https://bcserver/BC/",
+    "authMethod": "NavUserPassword"
+  },
+  "credentials": {
+    "username": "BCUser123",
+    "passwordRedacted": "Pa**********rd"
+  },
+  "url": {
+    "constructed": "https://bcserver/d590df57-680e-43c0-9af0-3f97706d4663/dev/apps?tenant=default&SchemaUpdateMode=synchronize",
+    "tenant": "default",
+    "schemaUpdateMode": "synchronize"
+  },
+  "connectivity": {
+    "reachable": true,
+    "statusCode": 200
+  },
+  "powershellScript": {
+    "path": "C:/path/to/scripts/Publish-BCApp.ps1",
+    "exists": true
+  },
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+\`\`\`
+
+**Troubleshooting:**
+
+If connectivity.reachable is false:
+- Check environment URL is correct
+- Verify environment is Running
+- Check network connectivity
+
+If credentials show wrong username:
+- Verify NavUserPassword user exists
+- Check user permissions in BC
+
+If URL looks wrong:
+- Compare with expected pattern: {scheme}://{host}/{environmentId}/dev/apps?tenant={tenant}&SchemaUpdateMode={mode}
+- Verify environmentId is correct`,
+  inputSchema: {
+    type: "object",
+    properties: {
+      workspacePath: {
+        type: "string",
+        description: "Absolute path to AL project workspace containing app.json"
+      },
+      environmentId: {
+        type: "string",
+        description: "Environment ID to diagnose publishing for (from list_environments)"
+      }
+    },
+    required: ["workspacePath", "environmentId"]
+  }
+};
+async function executeDiagnosePublish(compilationService, input) {
+  try {
+    const validated = DiagnosePublishInputSchema.parse(input);
+    const result = await compilationService.diagnosePublish({
+      workspacePath: validated.workspacePath,
+      environmentId: validated.environmentId
+    });
+    return result;
+  } catch (error) {
+    if (error instanceof external_exports.ZodError) {
+      return {
+        type: "error",
+        kind: "validation_error",
+        message: error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join(", "),
+        retryable: false,
+        details: {
+          validationErrors: error.errors
+        }
+      };
+    }
+    if (error instanceof AppError) {
+      return {
+        type: "error",
+        kind: error.code.toLowerCase(),
+        message: error.message,
+        retryable: error.retryable,
+        details: error.details
+      };
+    }
+    throw error;
+  }
+}
+__name(executeDiagnosePublish, "executeDiagnosePublish");
+
 // src/tools/diagnoseTests.ts
 var DiagnoseTestsInputSchema = external_exports.object({
   environmentId: external_exports.string().describe("The ID of the environment to diagnose"),
@@ -18289,7 +18718,7 @@ var DiagnoseTestsTool = class {
 };
 
 // src/tools/checkTestAppStatus.ts
-import path3 from "path";
+import path4 from "path";
 import fs3 from "fs/promises";
 var CheckTestAppStatusTool = class {
   constructor(demoPortalClient) {
@@ -18322,12 +18751,12 @@ var CheckTestAppStatusTool = class {
   }
   async checkCompilationStatus(workspacePath) {
     try {
-      const appJsonPath = path3.join(workspacePath, "app.json");
+      const appJsonPath = path4.join(workspacePath, "app.json");
       const appJsonContent = await fs3.readFile(appJsonPath, "utf8");
       const appJson = JSON.parse(appJsonContent);
-      const buildPath = path3.join(workspacePath, "build");
+      const buildPath = path4.join(workspacePath, "build");
       const appFileName = `${appJson.publisher}_${appJson.name}_${appJson.version}.app`.replace(/ /g, "_");
-      const appFilePath = path3.join(buildPath, appFileName);
+      const appFilePath = path4.join(buildPath, appFileName);
       try {
         const stats = await fs3.stat(appFilePath);
         return {
@@ -18356,7 +18785,7 @@ var CheckTestAppStatusTool = class {
       const scanDirectory = /* @__PURE__ */ __name(async (dir) => {
         const entries = await fs3.readdir(dir, { withFileTypes: true });
         for (const entry of entries) {
-          const fullPath = path3.join(dir, entry.name);
+          const fullPath = path4.join(dir, entry.name);
           if (entry.isDirectory() && entry.name !== ".alpackages" && entry.name !== "build") {
             await scanDirectory(fullPath);
           } else if (entry.isFile() && entry.name.endsWith(".al")) {
@@ -18547,7 +18976,7 @@ var Logger2 = class {
 };
 
 // src/tools/listTests.ts
-import * as path4 from "path";
+import * as path5 from "path";
 var ListTestsInputSchema = external_exports.object({
   workspacePath: external_exports.string().optional().describe("Path to the workspace containing AL test files. If not provided, uses current working directory."),
   forceRefresh: external_exports.boolean().optional().default(false).describe("Force a fresh scan of test files, bypassing cache"),
@@ -18587,7 +19016,7 @@ async function executeListTests(registry, input) {
   const startTime = Date.now();
   try {
     const params = ListTestsInputSchema.parse(input || {});
-    const workspacePath = params.workspacePath ? path4.resolve(params.workspacePath) : process.cwd();
+    const workspacePath = params.workspacePath ? path5.resolve(params.workspacePath) : process.cwd();
     logger.info(`Listing tests in workspace: ${workspacePath}`);
     logger.info(`Options: forceRefresh=${params.forceRefresh}, includeDetails=${params.includeDetails}`);
     const testCodeunits = await registry.getTestCodeunits(workspacePath, params.forceRefresh);
@@ -18998,7 +19427,7 @@ __name(getRemediation8, "getRemediation");
 
 // src/alFileScanner.ts
 import * as fs4 from "fs/promises";
-import * as path6 from "path";
+import * as path7 from "path";
 
 // node_modules/minimatch/dist/esm/index.js
 var import_brace_expansion = __toESM(require_brace_expansion(), 1);
@@ -19674,11 +20103,11 @@ var qmarksTestNoExtDot = /* @__PURE__ */ __name(([$0]) => {
   return (f) => f.length === len && f !== "." && f !== "..";
 }, "qmarksTestNoExtDot");
 var defaultPlatform = typeof process === "object" && process ? typeof process.env === "object" && process.env && process.env.__MINIMATCH_TESTING_PLATFORM__ || process.platform : "posix";
-var path5 = {
+var path6 = {
   win32: { sep: "\\" },
   posix: { sep: "/" }
 };
-var sep = defaultPlatform === "win32" ? path5.win32.sep : path5.posix.sep;
+var sep = defaultPlatform === "win32" ? path6.win32.sep : path6.posix.sep;
 minimatch.sep = sep;
 var GLOBSTAR = Symbol("globstar **");
 minimatch.GLOBSTAR = GLOBSTAR;
@@ -20343,7 +20772,7 @@ minimatch.escape = escape2;
 minimatch.unescape = unescape2;
 
 // node_modules/glob/dist/esm/glob.js
-import { fileURLToPath as fileURLToPath3 } from "node:url";
+import { fileURLToPath as fileURLToPath4 } from "node:url";
 
 // node_modules/lru-cache/dist/esm/index.js
 var perf = typeof performance === "object" && performance && typeof performance.now === "function" ? performance : Date;
@@ -21731,7 +22160,7 @@ var LRUCache = class _LRUCache {
 
 // node_modules/path-scurry/dist/esm/index.js
 import { posix, win32 } from "node:path";
-import { fileURLToPath as fileURLToPath2 } from "node:url";
+import { fileURLToPath as fileURLToPath3 } from "node:url";
 import { lstatSync, readdir as readdirCB, readdirSync, readlinkSync, realpathSync as rps } from "fs";
 import * as actualFS from "node:fs";
 import { lstat, readdir, readlink, realpath } from "node:fs/promises";
@@ -22895,12 +23324,12 @@ var PathBase = class {
   /**
    * Get the Path object referenced by the string path, resolved from this Path
    */
-  resolve(path8) {
-    if (!path8) {
+  resolve(path9) {
+    if (!path9) {
       return this;
     }
-    const rootPath = this.getRootString(path8);
-    const dir = path8.substring(rootPath.length);
+    const rootPath = this.getRootString(path9);
+    const dir = path9.substring(rootPath.length);
     const dirParts = dir.split(this.splitSep);
     const result = rootPath ? this.getRoot(rootPath).#resolveParts(dirParts) : this.#resolveParts(dirParts);
     return result;
@@ -23655,8 +24084,8 @@ var PathWin32 = class _PathWin32 extends PathBase {
   /**
    * @internal
    */
-  getRootString(path8) {
-    return win32.parse(path8).root;
+  getRootString(path9) {
+    return win32.parse(path9).root;
   }
   /**
    * @internal
@@ -23705,8 +24134,8 @@ var PathPosix = class _PathPosix extends PathBase {
   /**
    * @internal
    */
-  getRootString(path8) {
-    return path8.startsWith("/") ? "/" : "";
+  getRootString(path9) {
+    return path9.startsWith("/") ? "/" : "";
   }
   /**
    * @internal
@@ -23761,7 +24190,7 @@ var PathScurryBase = class {
   constructor(cwd = process.cwd(), pathImpl, sep2, { nocase, childrenCacheSize = 16 * 1024, fs: fs5 = defaultFS } = {}) {
     this.#fs = fsFromOption(fs5);
     if (cwd instanceof URL || cwd.startsWith("file://")) {
-      cwd = fileURLToPath2(cwd);
+      cwd = fileURLToPath3(cwd);
     }
     const cwdPath = pathImpl.resolve(cwd);
     this.roots = /* @__PURE__ */ Object.create(null);
@@ -23798,11 +24227,11 @@ var PathScurryBase = class {
   /**
    * Get the depth of a provided path, string, or the cwd
    */
-  depth(path8 = this.cwd) {
-    if (typeof path8 === "string") {
-      path8 = this.cwd.resolve(path8);
+  depth(path9 = this.cwd) {
+    if (typeof path9 === "string") {
+      path9 = this.cwd.resolve(path9);
     }
-    return path8.depth();
+    return path9.depth();
   }
   /**
    * Return the cache of child entries.  Exposed so subclasses can create
@@ -24289,9 +24718,9 @@ var PathScurryBase = class {
     process3();
     return results;
   }
-  chdir(path8 = this.cwd) {
+  chdir(path9 = this.cwd) {
     const oldCwd = this.cwd;
-    this.cwd = typeof path8 === "string" ? this.cwd.resolve(path8) : path8;
+    this.cwd = typeof path9 === "string" ? this.cwd.resolve(path9) : path9;
     this.cwd[setAsCwd](oldCwd);
   }
 };
@@ -24668,8 +25097,8 @@ var MatchRecord = class {
   }
   // match, absolute, ifdir
   entries() {
-    return [...this.store.entries()].map(([path8, n]) => [
-      path8,
+    return [...this.store.entries()].map(([path9, n]) => [
+      path9,
       !!(n & 2),
       !!(n & 1)
     ]);
@@ -24883,9 +25312,9 @@ var GlobUtil = class {
   signal;
   maxDepth;
   includeChildMatches;
-  constructor(patterns, path8, opts) {
+  constructor(patterns, path9, opts) {
     this.patterns = patterns;
-    this.path = path8;
+    this.path = path9;
     this.opts = opts;
     this.#sep = !opts.posix && opts.platform === "win32" ? "\\" : "/";
     this.includeChildMatches = opts.includeChildMatches !== false;
@@ -24904,11 +25333,11 @@ var GlobUtil = class {
       });
     }
   }
-  #ignored(path8) {
-    return this.seen.has(path8) || !!this.#ignore?.ignored?.(path8);
+  #ignored(path9) {
+    return this.seen.has(path9) || !!this.#ignore?.ignored?.(path9);
   }
-  #childrenIgnored(path8) {
-    return !!this.#ignore?.childrenIgnored?.(path8);
+  #childrenIgnored(path9) {
+    return !!this.#ignore?.childrenIgnored?.(path9);
   }
   // backpressure mechanism
   pause() {
@@ -25126,8 +25555,8 @@ var GlobWalker = class extends GlobUtil {
     __name(this, "GlobWalker");
   }
   matches = /* @__PURE__ */ new Set();
-  constructor(patterns, path8, opts) {
-    super(patterns, path8, opts);
+  constructor(patterns, path9, opts) {
+    super(patterns, path9, opts);
   }
   matchEmit(e) {
     this.matches.add(e);
@@ -25167,8 +25596,8 @@ var GlobStream = class extends GlobUtil {
     __name(this, "GlobStream");
   }
   results;
-  constructor(patterns, path8, opts) {
-    super(patterns, path8, opts);
+  constructor(patterns, path9, opts) {
+    super(patterns, path9, opts);
     this.results = new Minipass({
       signal: this.signal,
       objectMode: true
@@ -25265,7 +25694,7 @@ var Glob = class {
     if (!opts.cwd) {
       this.cwd = "";
     } else if (opts.cwd instanceof URL || opts.cwd.startsWith("file://")) {
-      opts.cwd = fileURLToPath3(opts.cwd);
+      opts.cwd = fileURLToPath4(opts.cwd);
     }
     this.cwd = opts.cwd || "";
     this.root = opts.root;
@@ -25488,7 +25917,7 @@ var ALFileScanner = class {
   async scanWorkspaceForALFiles(workspacePath, testCodeunitsOnly = false) {
     this.logger.info(`Scanning workspace for AL files: ${workspacePath}`);
     try {
-      const pattern = path6.join(workspacePath, "**/*.al").replace(/\\/g, "/");
+      const pattern = path7.join(workspacePath, "**/*.al").replace(/\\/g, "/");
       const files = await glob(pattern, {
         ignore: ["**/node_modules/**", "**/.git/**", "**/.alpackages/**"],
         nodir: true
@@ -25682,7 +26111,7 @@ var ALFileScanner = class {
 };
 
 // src/testRegistry.ts
-import * as path7 from "path";
+import * as path8 from "path";
 var TestRegistry = class {
   static {
     __name(this, "TestRegistry");
@@ -25710,7 +26139,7 @@ var TestRegistry = class {
    * @returns Array of test codeunits
    */
   async getTestCodeunits(workspacePath, forceRefresh = false) {
-    const normalizedPath = path7.normalize(workspacePath);
+    const normalizedPath = path8.normalize(workspacePath);
     if (!forceRefresh) {
       const cached = this.cache.get(normalizedPath);
       if (cached && this.isCacheValid(cached)) {
@@ -25849,7 +26278,7 @@ ${"\u2500".repeat(40)}
         }
       }
     }
-    const cached = this.cache.get(path7.normalize(workspacePath));
+    const cached = this.cache.get(path8.normalize(workspacePath));
     if (cached) {
       inventory += `
 ${"\u2500".repeat(40)}
@@ -25869,7 +26298,7 @@ ${"\u2500".repeat(40)}
    */
   clearCache(workspacePath) {
     if (workspacePath) {
-      const normalizedPath = path7.normalize(workspacePath);
+      const normalizedPath = path8.normalize(workspacePath);
       this.cache.delete(normalizedPath);
       this.logger.info(`Cleared cache for ${normalizedPath}`);
     } else {
@@ -25997,8 +26426,8 @@ async function main() {
     try {
       const { readFileSync: readFileSync2 } = await import("fs");
       const { join: join3 } = await import("path");
-      const { fileURLToPath: fileURLToPath4 } = await import("url");
-      const __dirname2 = join3(fileURLToPath4(import.meta.url), "..");
+      const { fileURLToPath: fileURLToPath5 } = await import("url");
+      const __dirname2 = join3(fileURLToPath5(import.meta.url), "..");
       const packageJson = JSON.parse(readFileSync2(join3(__dirname2, "../package.json"), "utf-8"));
       console.error(`Continia Environment MCP Server v${packageJson.version}`);
     } catch {
@@ -26062,7 +26491,12 @@ async function main() {
     const environmentService = new EnvironmentService(demoPortalClient);
     const credentialsService = new CredentialsService(demoPortalClient, config);
     const devEndpointClient = new DeveloperEndpointClient(credentialsService);
-    const compilationService = new CompilationService(demoPortalClient, devEndpointClient);
+    const compilationService = new CompilationService(
+      demoPortalClient,
+      devEndpointClient,
+      credentialsService,
+      config
+    );
     const testRunnerInfrastructureService = new TestRunnerInfrastructureService(
       demoPortalClient,
       devEndpointClient,
@@ -26129,6 +26563,7 @@ async function main() {
           stopEnvironmentTool,
           runTestsToolDefinition,
           compileAndPublishToolDefinition,
+          diagnosePublishToolDefinition,
           diagnoseTestsToolDefinition,
           checkTestAppStatusToolDefinition,
           listTestsToolDefinition,
@@ -26174,6 +26609,12 @@ async function main() {
             break;
           case "compile_and_publish":
             result = await executeCompileAndPublish(
+              compilationService,
+              args2 || {}
+            );
+            break;
+          case "diagnose_publish":
+            result = await executeDiagnosePublish(
               compilationService,
               args2 || {}
             );

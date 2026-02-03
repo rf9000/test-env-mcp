@@ -66,6 +66,10 @@ import {
   compileAndPublishToolDefinition,
   executeCompileAndPublish
 } from './tools/compileAndPublish.js';
+import {
+  diagnosePublishToolDefinition,
+  executeDiagnosePublish
+} from './tools/diagnosePublish.js';
 import { DiagnoseTestsTool } from './tools/diagnoseTests.js';
 import { CheckTestAppStatusTool } from './tools/checkTestAppStatus.js';
 import {
@@ -194,7 +198,12 @@ async function main(): Promise<void> {
     const environmentService = new EnvironmentService(demoPortalClient);
     const credentialsService = new CredentialsService(demoPortalClient, config);
     const devEndpointClient = new DeveloperEndpointClient(credentialsService);
-    const compilationService = new CompilationService(demoPortalClient, devEndpointClient);
+    const compilationService = new CompilationService(
+      demoPortalClient,
+      devEndpointClient,
+      credentialsService,
+      config
+    );
 
     // Initialize Test Runner infrastructure service
     const testRunnerInfrastructureService = new TestRunnerInfrastructureService(
@@ -276,6 +285,7 @@ async function main(): Promise<void> {
           stopEnvironmentTool,
           runTestsToolDefinition,
           compileAndPublishToolDefinition,
+          diagnosePublishToolDefinition,
           diagnoseTestsToolDefinition,
           checkTestAppStatusToolDefinition,
           listTestsToolDefinition,
@@ -335,6 +345,13 @@ async function main(): Promise<void> {
 
           case 'compile_and_publish':
             result = await executeCompileAndPublish(
+              compilationService,
+              (args || {}) as never
+            );
+            break;
+
+          case 'diagnose_publish':
+            result = await executeDiagnosePublish(
               compilationService,
               (args || {}) as never
             );

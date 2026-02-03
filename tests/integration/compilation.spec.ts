@@ -60,7 +60,12 @@ describe('Compilation Integration Tests', () => {
       const credentialsService = new CredentialsService(demoPortalClient, config);
       const devEndpointClient = new DeveloperEndpointClient(credentialsService);
 
-      compilationService = new CompilationService(demoPortalClient, devEndpointClient);
+      compilationService = new CompilationService(
+        demoPortalClient,
+        devEndpointClient,
+        credentialsService,
+        config
+      );
       testRunnerService = new TestRunnerService(demoPortalClient, config);
       environmentService = new EnvironmentService(demoPortalClient);
     } catch (error) {

@@ -7,14 +7,16 @@ import { CompilationService } from '@/services/compilationService.js';
 import { TestRunnerService } from '@/services/testRunnerService.js';
 import { DemoPortalClient } from '@/api/demoPortalClient.js';
 import { DeveloperEndpointClient } from '@/api/developerEndpointClient.js';
+import { CredentialsService } from '@/services/credentialsService.js';
 import { ConfigurationService } from '@/services/configurationService.js';
-import { HttpClient } from '@/api/httpClient.js';
+import { createClientFromConfig } from '@/api/httpClient.js';
 
 describe('Fixed Test Execution Integration', () => {
   let compilationService: CompilationService;
   let testRunnerService: TestRunnerService;
   let demoPortalClient: DemoPortalClient;
   let devEndpointClient: DeveloperEndpointClient;
+  let credentialsService: CredentialsService;
   let configService: ConfigurationService;
 
   const isIntegrationEnabled = !!process.env.DEMO_PORTAL_TOKEN;
@@ -25,11 +27,17 @@ describe('Fixed Test Execution Integration', () => {
       return;
     }
 
-    configService = new ConfigurationService();
-    const httpClient = new HttpClient(configService, 'demo_portal');
-    demoPortalClient = new DemoPortalClient(httpClient, configService);
-    devEndpointClient = new DeveloperEndpointClient(configService);
-    compilationService = new CompilationService(demoPortalClient, devEndpointClient);
+    configService = ConfigurationService.getInstance();
+    const httpClient = createClientFromConfig(configService);
+    demoPortalClient = new DemoPortalClient(httpClient);
+    credentialsService = new CredentialsService(demoPortalClient, configService);
+    devEndpointClient = new DeveloperEndpointClient(credentialsService);
+    compilationService = new CompilationService(
+      demoPortalClient,
+      devEndpointClient,
+      credentialsService,
+      configService
+    );
     testRunnerService = new TestRunnerService(demoPortalClient, configService);
   });
 

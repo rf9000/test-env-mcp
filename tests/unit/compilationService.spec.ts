@@ -2,18 +2,34 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CompilationService } from '@/services/compilationService.js';
 import type { DemoPortalClient } from '@/api/demoPortalClient.js';
 import type { DeveloperEndpointClient } from '@/api/developerEndpointClient.js';
+import type { CredentialsService } from '@/services/credentialsService.js';
+import type { ConfigurationService } from '@/services/configurationService.js';
 
 describe('CompilationService', () => {
   let compilationService: CompilationService;
   let mockDemoPortalClient: DemoPortalClient;
   let mockDevEndpointClient: DeveloperEndpointClient;
+  let mockCredentialsService: CredentialsService;
+  let mockConfigService: ConfigurationService;
 
   beforeEach(() => {
     // Create mocks
     mockDemoPortalClient = {} as DemoPortalClient;
     mockDevEndpointClient = {} as DeveloperEndpointClient;
+    mockCredentialsService = {
+      getDeveloperEndpointAuth: vi.fn(),
+      invalidateDeveloperEndpointAuth: vi.fn()
+    } as unknown as CredentialsService;
+    mockConfigService = {
+      get: vi.fn().mockReturnValue('default')
+    } as unknown as ConfigurationService;
 
-    compilationService = new CompilationService(mockDemoPortalClient, mockDevEndpointClient);
+    compilationService = new CompilationService(
+      mockDemoPortalClient,
+      mockDevEndpointClient,
+      mockCredentialsService,
+      mockConfigService
+    );
   });
 
   describe('isTestApp detection', () => {

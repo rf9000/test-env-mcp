@@ -10,6 +10,11 @@
  * - Parses compiler diagnostics (errors and warnings)
  * - Validates app.json and output paths
  * - Orchestrates compile-and-publish workflow
+ *
+ * Publishing now uses PowerShell script (Publish-BCApp.ps1) for:
+ * - Deterministic, debuggable behavior
+ * - Proven pattern matching knowledge base exactly
+ * - Isolation from MCP server (failures don't crash server)
  */
 
 import { spawn } from 'child_process';
@@ -18,7 +23,10 @@ import fs from 'fs/promises';
 import { z } from 'zod';
 import type { DemoPortalClient } from '@/api/demoPortalClient.js';
 import type { DeveloperEndpointClient } from '@/api/developerEndpointClient.js';
-import { CompileError, ValidationError } from '@/errors/errors.js';
+import type { CredentialsService } from '@/services/credentialsService.js';
+import type { ConfigurationService } from '@/services/configurationService.js';
+import { PowerShellPublishService } from '@/services/powershellPublishService.js';
+import { CompileError, ValidationError, AuthError } from '@/errors/errors.js';
 
 /**
  * Schema for app.json validation
@@ -105,12 +113,33 @@ export interface CompileAndPublishResult {
  * - Compile AL projects using `al compile`
  * - Parse compiler diagnostics
  * - Orchestrate compile → get environment → publish workflow
+ *
+ * Publishing uses PowerShell script (Publish-BCApp.ps1) for reliability.
+ * The HTTP-based DeveloperEndpointClient is kept as a fallback/reference.
  */
 export class CompilationService {
+  private readonly powershellPublishService: PowerShellPublishService;
+  /** HTTP-based endpoint client - kept as fallback option if PowerShell fails */
+  private readonly devEndpointClient: DeveloperEndpointClient;
+
   constructor(
     private readonly demoPortalClient: DemoPortalClient,
-    private readonly devEndpointClient: DeveloperEndpointClient
-  ) {}
+    devEndpointClient: DeveloperEndpointClient,
+    private readonly credentialsService: CredentialsService,
+    private readonly configService: ConfigurationService
+  ) {
+    this.powershellPublishService = new PowerShellPublishService();
+    this.devEndpointClient = devEndpointClient;
+  }
+
+  /**
+   * Get the HTTP-based developer endpoint client (for fallback publishing)
+   *
+   * @returns DeveloperEndpointClient instance
+   */
+  getDevEndpointClient(): DeveloperEndpointClient {
+    return this.devEndpointClient;
+  }
 
   /**
    * Compile AL project and publish to BC environment
@@ -168,16 +197,71 @@ export class CompilationService {
     const authMethod =
       (environmentResponse as { authenticationMethod?: string }).authenticationMethod ?? 'NavUserPassword';
 
-    // Phase 4: Publish to Developer Endpoint
-    const publishResult = await this.devEndpointClient.publishApp({
+    // Phase 4: Publish to Developer Endpoint using PowerShell script
+    // Get credentials for PowerShell script
+    const authResult = await this.credentialsService.getDeveloperEndpointAuth({
+      id: params.environmentId,
+      authenticationMethod: authMethod
+    });
+
+    // Get configuration for publishing
+    const tenant = this.configService.get('auth.devTenant', 'default') as string;
+    const allowInsecureCerts = this.configService.get('auth.allowInsecureCertificates', false) as boolean;
+
+    console.error(`[CompilationService] Publishing app using PowerShell script`);
+    console.error(`[CompilationService] App: ${compileResult.appPath}`);
+    console.error(`[CompilationService] Environment: ${params.environmentId}`);
+    console.error(`[CompilationService] URL: ${environmentUrl}`);
+    console.error(`[CompilationService] User: ${authResult.user.username}`);
+
+    // Execute PowerShell publishing script
+    const psResult = await this.powershellPublishService.publishApp({
       appPath: compileResult.appPath,
-      appFileName: path.basename(compileResult.appPath),
       environmentId: params.environmentId,
       environmentUrl,
-      authenticationMethod: authMethod,
+      username: authResult.user.username,
+      password: authResult.user.password,
       schemaUpdateMode: params.schemaUpdateMode ?? 'synchronize',
-      dependencyPublishingOption: params.dependencyPublishingOption
+      dependencyPublishingOption: params.dependencyPublishingOption,
+      tenant,
+      allowInsecureCertificates: allowInsecureCerts
     });
+
+    // Convert PowerShell result to expected format
+    const publishResult = {
+      success: psResult.success,
+      status: psResult.status as 'completed' | 'failed',
+      schemaUpdateMode: psResult.schemaUpdateMode,
+      user: psResult.user,
+      response: psResult.response,
+      error: psResult.error
+    };
+
+    // Handle publish failures
+    if (!publishResult.success) {
+      // Check for auth failure
+      if (psResult.error?.includes('Authentication failed') || psResult.error?.includes('401')) {
+        // Invalidate credentials and provide actionable error
+        this.credentialsService.invalidateDeveloperEndpointAuth(params.environmentId);
+        throw new AuthError(
+          `Publishing failed: ${psResult.error}. Credentials have been invalidated for retry.`,
+          {
+            environmentId: params.environmentId,
+            user: authResult.user.username,
+            url: psResult.url
+          }
+        );
+      }
+      // Other failures - throw with details
+      throw new ValidationError(
+        `Publishing failed: ${psResult.error}`,
+        {
+          environmentId: params.environmentId,
+          url: psResult.url,
+          schemaUpdateMode: psResult.schemaUpdateMode
+        }
+      );
+    }
 
     // Phase 5: Verify publication (optional, only if publish succeeded)
     let verificationStatus: CompileAndPublishResult['verificationStatus'] = undefined;
@@ -202,6 +286,142 @@ export class CompilationService {
     }
 
     return result;
+  }
+
+  /**
+   * Diagnose publishing configuration without actually publishing
+   *
+   * Useful for debugging publish failures. Shows:
+   * - Constructed URL
+   * - Credentials (password redacted)
+   * - Connectivity test results
+   * - Environment configuration
+   *
+   * @param params - Parameters for diagnosis
+   * @returns Diagnostic information
+   */
+  async diagnosePublish(params: {
+    workspacePath: string;
+    environmentId: string;
+  }): Promise<{
+    type: 'publish_diagnostics';
+    environment: {
+      id: string;
+      url: string;
+      authMethod: string;
+    };
+    credentials: {
+      username: string;
+      passwordRedacted: string;
+    };
+    url: {
+      constructed: string;
+      tenant: string;
+      schemaUpdateMode: string;
+    };
+    connectivity: {
+      reachable: boolean;
+      statusCode?: number;
+      error?: string;
+    };
+    powershellScript: {
+      path: string;
+      exists: boolean;
+    };
+    timestamp: string;
+  }> {
+    // Get environment details
+    const environmentResponse = await this.demoPortalClient.getEnvironmentRaw(
+      params.environmentId
+    );
+
+    const environmentUrl =
+      (environmentResponse as { url?: string }).url ??
+      (environmentResponse as { serverInstance?: string }).serverInstance ??
+      '';
+
+    const authMethod =
+      (environmentResponse as { authenticationMethod?: string }).authenticationMethod ?? 'NavUserPassword';
+
+    // Get credentials
+    const authResult = await this.credentialsService.getDeveloperEndpointAuth({
+      id: params.environmentId,
+      authenticationMethod: authMethod
+    });
+
+    // Redact password for display
+    const password = authResult.user.password;
+    const passwordRedacted = password.length <= 4
+      ? '****'
+      : password.substring(0, 2) + '*'.repeat(password.length - 4) + password.substring(password.length - 2);
+
+    // Get configuration
+    const tenant = this.configService.get('auth.devTenant', 'default') as string;
+    const schemaUpdateMode = 'synchronize';
+
+    // Construct URL (same logic as PowerShell script)
+    const baseUrl = new URL(environmentUrl);
+    const constructedUrl = `${baseUrl.origin}/${params.environmentId}/dev/apps?tenant=${tenant}&SchemaUpdateMode=${schemaUpdateMode}`;
+
+    // Check PowerShell script exists
+    const scriptPath = this.powershellPublishService.getScriptPath();
+    let scriptExists = false;
+    try {
+      await fs.access(scriptPath);
+      scriptExists = true;
+    } catch {
+      scriptExists = false;
+    }
+
+    // Test connectivity
+    let connectivity: { reachable: boolean; statusCode?: number; error?: string } = {
+      reachable: false
+    };
+
+    try {
+      // Use PowerShell diagnose mode for connectivity test
+      const diagResult = await this.powershellPublishService.diagnose({
+        appPath: path.join(params.workspacePath, 'app.json'), // Just need a file that exists
+        environmentId: params.environmentId,
+        environmentUrl,
+        username: authResult.user.username,
+        password: authResult.user.password,
+        tenant
+      });
+
+      if (diagResult.diagnostics?.connectivity) {
+        connectivity = diagResult.diagnostics.connectivity;
+      }
+    } catch (error) {
+      connectivity = {
+        reachable: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+
+    return {
+      type: 'publish_diagnostics',
+      environment: {
+        id: params.environmentId,
+        url: environmentUrl,
+        authMethod
+      },
+      credentials: {
+        username: authResult.user.username,
+        passwordRedacted
+      },
+      url: {
+        constructed: constructedUrl,
+        tenant,
+        schemaUpdateMode
+      },
+      connectivity,
+      powershellScript: {
+        path: scriptPath,
+        exists: scriptExists
+      },
+      timestamp: new Date().toISOString()
+    };
   }
 
   /**
