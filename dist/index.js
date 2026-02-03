@@ -18812,10 +18812,11 @@ Example 3: Ignore missing dependencies
   }
 };
 async function executePublishApp(compilationService, input) {
+  let plainInput;
   try {
     console.error("[publish_app] Received input type:", typeof input);
     console.error("[publish_app] Received input:", JSON.stringify(input, null, 2));
-    const plainInput = JSON.parse(JSON.stringify(input));
+    plainInput = JSON.parse(JSON.stringify(input));
     console.error("[publish_app] Plain input type:", typeof plainInput);
     console.error("[publish_app] Plain input keys:", plainInput && typeof plainInput === "object" ? Object.keys(plainInput) : "not an object");
     console.error("[publish_app] Plain input environmentId:", plainInput?.environmentId);
@@ -18831,7 +18832,11 @@ async function executePublishApp(compilationService, input) {
   } catch (error) {
     if (error instanceof external_exports.ZodError) {
       const inputKeys = input && typeof input === "object" ? Object.keys(input) : [];
-      console.error("[publish_app] Validation failed. Received keys:", inputKeys);
+      const plainKeys = plainInput && typeof plainInput === "object" ? Object.keys(plainInput) : [];
+      console.error("[publish_app] Validation failed.");
+      console.error("[publish_app] Original input keys:", inputKeys);
+      console.error("[publish_app] Plain input keys:", plainKeys);
+      console.error("[publish_app] Plain input value:", JSON.stringify(plainInput, null, 2));
       console.error("[publish_app] Validation errors:", JSON.stringify(error.errors, null, 2));
       return {
         type: "error",
@@ -18842,7 +18847,10 @@ async function executePublishApp(compilationService, input) {
           validationErrors: error.errors,
           receivedInputType: typeof input,
           receivedInputKeys: inputKeys.length > 0 ? inputKeys : "not an object or empty",
-          receivedInput: input
+          receivedInput: input,
+          plainInputType: typeof plainInput,
+          plainInputKeys: plainKeys.length > 0 ? plainKeys : "not an object or empty",
+          plainInput
         },
         remediation: "Check that all required parameters are provided. Required: appPath, environmentId. The tool received: " + (inputKeys.length > 0 ? inputKeys.join(", ") : typeof input)
       };

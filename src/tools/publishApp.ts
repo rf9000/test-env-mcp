@@ -181,19 +181,22 @@ export async function executePublishApp(
   compilationService: CompilationService,
   input: unknown
 ): Promise<unknown> {
+  // Force a complete deep clone via JSON serialization to ensure Zod validation works
+  // MCP SDK arguments may have unusual prototype/property/getter behavior
+  // Define outside try block so it's accessible in catch
+  let plainInput: unknown;
+
   try {
     // Debug: Log received input to stderr (visible in MCP server logs)
     console.error('[publish_app] Received input type:', typeof input);
     console.error('[publish_app] Received input:', JSON.stringify(input, null, 2));
 
-    // Force a complete deep clone via JSON serialization to ensure Zod validation works
-    // MCP SDK arguments may have unusual prototype/property/getter behavior
-    const plainInput = JSON.parse(JSON.stringify(input));
+    plainInput = JSON.parse(JSON.stringify(input));
 
     console.error('[publish_app] Plain input type:', typeof plainInput);
-    console.error('[publish_app] Plain input keys:', plainInput && typeof plainInput === 'object' ? Object.keys(plainInput) : 'not an object');
-    console.error('[publish_app] Plain input environmentId:', plainInput?.environmentId);
-    console.error('[publish_app] Plain input appPath:', plainInput?.appPath);
+    console.error('[publish_app] Plain input keys:', plainInput && typeof plainInput === 'object' ? Object.keys(plainInput as object) : 'not an object');
+    console.error('[publish_app] Plain input environmentId:', (plainInput as Record<string, unknown>)?.environmentId);
+    console.error('[publish_app] Plain input appPath:', (plainInput as Record<string, unknown>)?.appPath);
 
     // Validate input
     const validated = PublishAppInputSchema.parse(plainInput);
@@ -211,7 +214,11 @@ export async function executePublishApp(
     // Handle Zod validation errors with detailed debugging
     if (error instanceof z.ZodError) {
       const inputKeys = input && typeof input === 'object' ? Object.keys(input) : [];
-      console.error('[publish_app] Validation failed. Received keys:', inputKeys);
+      const plainKeys = plainInput && typeof plainInput === 'object' ? Object.keys(plainInput as object) : [];
+      console.error('[publish_app] Validation failed.');
+      console.error('[publish_app] Original input keys:', inputKeys);
+      console.error('[publish_app] Plain input keys:', plainKeys);
+      console.error('[publish_app] Plain input value:', JSON.stringify(plainInput, null, 2));
       console.error('[publish_app] Validation errors:', JSON.stringify(error.errors, null, 2));
 
       return {
@@ -223,7 +230,10 @@ export async function executePublishApp(
           validationErrors: error.errors,
           receivedInputType: typeof input,
           receivedInputKeys: inputKeys.length > 0 ? inputKeys : 'not an object or empty',
-          receivedInput: input
+          receivedInput: input,
+          plainInputType: typeof plainInput,
+          plainInputKeys: plainKeys.length > 0 ? plainKeys : 'not an object or empty',
+          plainInput: plainInput
         },
         remediation: 'Check that all required parameters are provided. Required: appPath, environmentId. ' +
           'The tool received: ' + (inputKeys.length > 0 ? inputKeys.join(', ') : typeof input)
