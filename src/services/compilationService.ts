@@ -106,6 +106,40 @@ export interface CompileAndPublishResult {
 }
 
 /**
+ * Parameters for publish-only operation (no compilation)
+ */
+export interface PublishAppParams {
+  /** Absolute path to existing .app file */
+  appPath: string;
+  /** Environment ID to publish to */
+  environmentId: string;
+  /** Schema update mode for publishing */
+  schemaUpdateMode?: 'synchronize' | 'recreate' | 'forcesync' | undefined;
+  /** Dependency publishing option: default, strict (enforce all), ignore (skip missing) */
+  dependencyPublishingOption?: 'default' | 'strict' | 'ignore' | undefined;
+}
+
+/**
+ * Result of publish-only operation
+ */
+export interface PublishAppResult {
+  type: 'publish_result';
+  publish: {
+    success: boolean;
+    status: string;
+    schemaUpdateMode: string;
+    user: string;
+    url?: string;
+  };
+  app: {
+    path: string;
+    fileName: string;
+    size: number;
+  };
+  fetchedAt: string;
+}
+
+/**
  * Service for compiling AL code and publishing to BC
  *
  * Responsibilities:
@@ -139,6 +173,156 @@ export class CompilationService {
    */
   getDevEndpointClient(): DeveloperEndpointClient {
     return this.devEndpointClient;
+  }
+
+  /**
+   * Publish an existing .app file to BC environment (no compilation)
+   *
+   * Workflow:
+   * 1. Validate .app file exists
+   * 2. Get environment details from Demo Portal
+   * 3. Publish .app file to Developer Endpoint
+   *
+   * @param params - Publishing parameters
+   * @returns Publishing result with app details
+   * @throws {ValidationError} If .app file doesn't exist or environment invalid
+   * @throws {AuthError} If publishing authentication fails
+   */
+  async publishApp(params: PublishAppParams): Promise<PublishAppResult> {
+    // Phase 1: Validate .app file exists
+    const appStats = await this.validateAppFile(params.appPath);
+
+    // Phase 2: Get environment details from Demo Portal
+    const environmentResponse = await this.demoPortalClient.getEnvironmentRaw(
+      params.environmentId
+    );
+
+    // Extract environment URL (handle different possible field names)
+    const environmentUrl =
+      (environmentResponse as { url?: string }).url ??
+      (environmentResponse as { serverInstance?: string }).serverInstance ??
+      '';
+
+    if (!environmentUrl) {
+      throw new ValidationError(
+        `Environment '${params.environmentId}' does not have a valid URL. Cannot publish app.`,
+        { environmentId: params.environmentId }
+      );
+    }
+
+    const authMethod =
+      (environmentResponse as { authenticationMethod?: string }).authenticationMethod ?? 'NavUserPassword';
+
+    // Phase 3: Get credentials for publishing
+    const authResult = await this.credentialsService.getDeveloperEndpointAuth({
+      id: params.environmentId,
+      authenticationMethod: authMethod
+    });
+
+    // Get configuration for publishing
+    const tenant = this.configService.get('auth.devTenant', 'default') as string;
+    const allowInsecureCerts = this.configService.get('auth.allowInsecureCertificates', false) as boolean;
+
+    console.error(`[CompilationService] Publishing existing app using PowerShell script`);
+    console.error(`[CompilationService] App: ${params.appPath}`);
+    console.error(`[CompilationService] Environment: ${params.environmentId}`);
+    console.error(`[CompilationService] URL: ${environmentUrl}`);
+    console.error(`[CompilationService] User: ${authResult.user.username}`);
+
+    // Phase 4: Execute PowerShell publishing script
+    const psResult = await this.powershellPublishService.publishApp({
+      appPath: params.appPath,
+      environmentId: params.environmentId,
+      environmentUrl,
+      username: authResult.user.username,
+      password: authResult.user.password,
+      schemaUpdateMode: params.schemaUpdateMode ?? 'synchronize',
+      dependencyPublishingOption: params.dependencyPublishingOption,
+      tenant,
+      allowInsecureCertificates: allowInsecureCerts
+    });
+
+    // Handle publish failures
+    if (!psResult.success) {
+      // Check for auth failure
+      if (psResult.error?.includes('Authentication failed') || psResult.error?.includes('401')) {
+        this.credentialsService.invalidateDeveloperEndpointAuth(params.environmentId);
+        throw new AuthError(
+          `Publishing failed: ${psResult.error}. Credentials have been invalidated for retry.`,
+          {
+            environmentId: params.environmentId,
+            user: authResult.user.username,
+            url: psResult.url
+          }
+        );
+      }
+      // Other failures - throw with details
+      throw new ValidationError(
+        `Publishing failed: ${psResult.error}`,
+        {
+          environmentId: params.environmentId,
+          url: psResult.url,
+          schemaUpdateMode: psResult.schemaUpdateMode
+        }
+      );
+    }
+
+    // Build result
+    const result: PublishAppResult = {
+      type: 'publish_result',
+      publish: {
+        success: psResult.success,
+        status: psResult.status,
+        schemaUpdateMode: psResult.schemaUpdateMode,
+        user: psResult.user,
+        url: psResult.url
+      },
+      app: {
+        path: params.appPath,
+        fileName: path.basename(params.appPath),
+        size: appStats.size
+      },
+      fetchedAt: new Date().toISOString()
+    };
+
+    return result;
+  }
+
+  /**
+   * Validate that a .app file exists and return its stats
+   *
+   * @param appPath - Path to the .app file
+   * @returns File stats
+   * @throws {ValidationError} If file doesn't exist or isn't a .app file
+   */
+  private async validateAppFile(appPath: string): Promise<{ size: number }> {
+    // Check file extension
+    if (!appPath.toLowerCase().endsWith('.app')) {
+      throw new ValidationError(
+        `Invalid app file: '${appPath}'. File must have .app extension.`,
+        { appPath }
+      );
+    }
+
+    // Check file exists
+    try {
+      const stats = await fs.stat(appPath);
+      if (!stats.isFile()) {
+        throw new ValidationError(
+          `Invalid app path: '${appPath}' is not a file.`,
+          { appPath }
+        );
+      }
+      return { size: stats.size };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new ValidationError(
+          `App file not found: '${appPath}'. Ensure the path is correct and the file exists.`,
+          { appPath }
+        );
+      }
+      throw error;
+    }
   }
 
   /**

@@ -70,6 +70,10 @@ import {
   diagnosePublishToolDefinition,
   executeDiagnosePublish
 } from './tools/diagnosePublish.js';
+import {
+  publishAppToolDefinition,
+  executePublishApp
+} from './tools/publishApp.js';
 import { DiagnoseTestsTool } from './tools/diagnoseTests.js';
 import { CheckTestAppStatusTool } from './tools/checkTestAppStatus.js';
 import {
@@ -285,6 +289,7 @@ async function main(): Promise<void> {
           stopEnvironmentTool,
           runTestsToolDefinition,
           compileAndPublishToolDefinition,
+          publishAppToolDefinition,
           diagnosePublishToolDefinition,
           diagnoseTestsToolDefinition,
           checkTestAppStatusToolDefinition,
@@ -345,6 +350,13 @@ async function main(): Promise<void> {
 
           case 'compile_and_publish':
             result = await executeCompileAndPublish(
+              compilationService,
+              (args || {}) as never
+            );
+            break;
+
+          case 'publish_app':
+            result = await executePublishApp(
               compilationService,
               (args || {}) as never
             );

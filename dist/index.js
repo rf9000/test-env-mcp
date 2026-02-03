@@ -16136,6 +16136,126 @@ var CompilationService = class {
     return this.devEndpointClient;
   }
   /**
+   * Publish an existing .app file to BC environment (no compilation)
+   *
+   * Workflow:
+   * 1. Validate .app file exists
+   * 2. Get environment details from Demo Portal
+   * 3. Publish .app file to Developer Endpoint
+   *
+   * @param params - Publishing parameters
+   * @returns Publishing result with app details
+   * @throws {ValidationError} If .app file doesn't exist or environment invalid
+   * @throws {AuthError} If publishing authentication fails
+   */
+  async publishApp(params) {
+    const appStats = await this.validateAppFile(params.appPath);
+    const environmentResponse = await this.demoPortalClient.getEnvironmentRaw(
+      params.environmentId
+    );
+    const environmentUrl = environmentResponse.url ?? environmentResponse.serverInstance ?? "";
+    if (!environmentUrl) {
+      throw new ValidationError(
+        `Environment '${params.environmentId}' does not have a valid URL. Cannot publish app.`,
+        { environmentId: params.environmentId }
+      );
+    }
+    const authMethod = environmentResponse.authenticationMethod ?? "NavUserPassword";
+    const authResult = await this.credentialsService.getDeveloperEndpointAuth({
+      id: params.environmentId,
+      authenticationMethod: authMethod
+    });
+    const tenant = this.configService.get("auth.devTenant", "default");
+    const allowInsecureCerts = this.configService.get("auth.allowInsecureCertificates", false);
+    console.error(`[CompilationService] Publishing existing app using PowerShell script`);
+    console.error(`[CompilationService] App: ${params.appPath}`);
+    console.error(`[CompilationService] Environment: ${params.environmentId}`);
+    console.error(`[CompilationService] URL: ${environmentUrl}`);
+    console.error(`[CompilationService] User: ${authResult.user.username}`);
+    const psResult = await this.powershellPublishService.publishApp({
+      appPath: params.appPath,
+      environmentId: params.environmentId,
+      environmentUrl,
+      username: authResult.user.username,
+      password: authResult.user.password,
+      schemaUpdateMode: params.schemaUpdateMode ?? "synchronize",
+      dependencyPublishingOption: params.dependencyPublishingOption,
+      tenant,
+      allowInsecureCertificates: allowInsecureCerts
+    });
+    if (!psResult.success) {
+      if (psResult.error?.includes("Authentication failed") || psResult.error?.includes("401")) {
+        this.credentialsService.invalidateDeveloperEndpointAuth(params.environmentId);
+        throw new AuthError(
+          `Publishing failed: ${psResult.error}. Credentials have been invalidated for retry.`,
+          {
+            environmentId: params.environmentId,
+            user: authResult.user.username,
+            url: psResult.url
+          }
+        );
+      }
+      throw new ValidationError(
+        `Publishing failed: ${psResult.error}`,
+        {
+          environmentId: params.environmentId,
+          url: psResult.url,
+          schemaUpdateMode: psResult.schemaUpdateMode
+        }
+      );
+    }
+    const result = {
+      type: "publish_result",
+      publish: {
+        success: psResult.success,
+        status: psResult.status,
+        schemaUpdateMode: psResult.schemaUpdateMode,
+        user: psResult.user,
+        url: psResult.url
+      },
+      app: {
+        path: params.appPath,
+        fileName: path2.basename(params.appPath),
+        size: appStats.size
+      },
+      fetchedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    return result;
+  }
+  /**
+   * Validate that a .app file exists and return its stats
+   *
+   * @param appPath - Path to the .app file
+   * @returns File stats
+   * @throws {ValidationError} If file doesn't exist or isn't a .app file
+   */
+  async validateAppFile(appPath) {
+    if (!appPath.toLowerCase().endsWith(".app")) {
+      throw new ValidationError(
+        `Invalid app file: '${appPath}'. File must have .app extension.`,
+        { appPath }
+      );
+    }
+    try {
+      const stats = await fs.stat(appPath);
+      if (!stats.isFile()) {
+        throw new ValidationError(
+          `Invalid app path: '${appPath}' is not a file.`,
+          { appPath }
+        );
+      }
+      return { size: stats.size };
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        throw new ValidationError(
+          `App file not found: '${appPath}'. Ensure the path is correct and the file exists.`,
+          { appPath }
+        );
+      }
+      throw error;
+    }
+  }
+  /**
    * Compile AL project and publish to BC environment
    *
    * Workflow:
@@ -18542,6 +18662,221 @@ async function executeDiagnosePublish(compilationService, input) {
 }
 __name(executeDiagnosePublish, "executeDiagnosePublish");
 
+// src/tools/publishApp.ts
+var PublishAppInputSchema = external_exports.object({
+  appPath: external_exports.string().min(1, "appPath is required").describe("Absolute path to the .app file to publish"),
+  environmentId: external_exports.string().min(1, "environmentId is required").describe("Environment ID to publish to (from list_environments)"),
+  schemaUpdateMode: external_exports.enum(["synchronize", "recreate", "forcesync"]).optional().default("synchronize").describe(
+    "Schema update mode: synchronize (default) = safe update, recreate = drop+recreate tables, forcesync = force synchronization"
+  ),
+  dependencyPublishingOption: external_exports.enum(["default", "strict", "ignore"]).optional().describe(
+    "Dependency publishing option: default = standard handling, strict = enforce all dependencies, ignore = skip missing dependencies"
+  )
+}).strict();
+var publishAppToolDefinition = {
+  name: "publish_app",
+  description: `Publish an existing .app file to Business Central environment without compilation.
+
+**Purpose:**
+Publish pre-compiled .app files directly to BC environments. Useful when:
+- Apps are compiled by VS Code or other editors
+- Apps are built by CI/CD pipelines
+- Apps are located in project root (not build/ folder)
+- Re-publishing an existing app without recompilation
+
+**When to Use:**
+- You have an existing .app file ready to deploy
+- App was compiled externally (VS Code, CI/CD, etc.)
+- App file is in project root or non-standard location
+- You want to skip compilation and publish directly
+
+**Use compile_and_publish Instead When:**
+- You need to compile source code first
+- You want the full compile + publish workflow
+
+**Prerequisites:**
+- Valid .app file exists at the specified path
+- Environment must be Running (use start_environment first)
+- NavUserPassword user exists for environment (created via Demo Portal)
+
+**Parameters:**
+- appPath (required): Absolute path to the .app file
+- environmentId (required): Target environment ID from list_environments
+- schemaUpdateMode (optional): How to update database schema
+  - synchronize (default): Safe incremental update
+  - recreate: Drop and recreate tables (data loss!)
+  - forcesync: Force synchronization on conflicts
+- dependencyPublishingOption (optional): How to handle dependencies
+  - default: Standard dependency handling
+  - strict: Enforce all dependencies exist
+  - ignore: Skip missing dependencies
+
+**Response Format:**
+Returns structured JSON with:
+- publish: Publishing results (success, status, schema mode, user)
+- app: App file details (path, fileName, size)
+
+**Examples:**
+
+Example 1: Publish app from project root
+\`\`\`json
+{
+  "appPath": "C:/Projects/MyApp/Publisher_MyApp_1.0.0.0.app",
+  "environmentId": "abc-123"
+}
+\`\`\`
+
+Example 2: Force schema sync
+\`\`\`json
+{
+  "appPath": "C:/Projects/MyApp/Publisher_MyApp_1.0.0.0.app",
+  "environmentId": "abc-123",
+  "schemaUpdateMode": "forcesync"
+}
+\`\`\`
+
+Example 3: Ignore missing dependencies
+\`\`\`json
+{
+  "appPath": "C:/Projects/MyApp/Publisher_MyApp_1.0.0.0.app",
+  "environmentId": "abc-123",
+  "dependencyPublishingOption": "ignore"
+}
+\`\`\`
+
+**Response Example (Success):**
+\`\`\`json
+{
+  "type": "publish_result",
+  "publish": {
+    "success": true,
+    "status": "completed",
+    "schemaUpdateMode": "synchronize",
+    "user": "BCUser123",
+    "url": "https://..."
+  },
+  "app": {
+    "path": "C:/Projects/MyApp/Publisher_MyApp_1.0.0.0.app",
+    "fileName": "Publisher_MyApp_1.0.0.0.app",
+    "size": 245760
+  },
+  "fetchedAt": "2024-01-15T10:30:00Z"
+}
+\`\`\`
+
+**Error Handling:**
+
+- VALIDATION_ERROR: File not found, invalid path, or not a .app file
+- NOT_FOUND: Environment doesn't exist -> Use list_environments
+- NO_USERS: No BC users for environment -> Create user via Demo Portal
+- AUTH_ERROR: Publishing authentication failed -> Verify user permissions
+- CONFLICT_ERROR: Schema conflict (409) -> Retry with schemaUpdateMode="forcesync"
+- NETWORK_ERROR: Connection failed -> Verify environment is Running`,
+  inputSchema: {
+    type: "object",
+    properties: {
+      appPath: {
+        type: "string",
+        description: "Absolute path to the .app file to publish"
+      },
+      environmentId: {
+        type: "string",
+        description: "Environment ID to publish to (from list_environments)"
+      },
+      schemaUpdateMode: {
+        type: "string",
+        enum: ["synchronize", "recreate", "forcesync"],
+        description: "Schema update mode: synchronize (default) = safe update, recreate = drop+recreate tables, forcesync = force synchronization"
+      },
+      dependencyPublishingOption: {
+        type: "string",
+        enum: ["default", "strict", "ignore"],
+        description: "Dependency publishing option: default = standard handling, strict = enforce all dependencies, ignore = skip missing dependencies"
+      }
+    },
+    required: ["appPath", "environmentId"]
+  }
+};
+async function executePublishApp(compilationService, input) {
+  try {
+    console.error("[publish_app] Received input type:", typeof input);
+    console.error("[publish_app] Received input:", JSON.stringify(input, null, 2));
+    const validated = PublishAppInputSchema.parse(input);
+    const result = await compilationService.publishApp({
+      appPath: validated.appPath,
+      environmentId: validated.environmentId,
+      schemaUpdateMode: validated.schemaUpdateMode,
+      dependencyPublishingOption: validated.dependencyPublishingOption
+    });
+    return result;
+  } catch (error) {
+    if (error instanceof external_exports.ZodError) {
+      const inputKeys = input && typeof input === "object" ? Object.keys(input) : [];
+      console.error("[publish_app] Validation failed. Received keys:", inputKeys);
+      console.error("[publish_app] Validation errors:", JSON.stringify(error.errors, null, 2));
+      return {
+        type: "error",
+        kind: "validation_error",
+        message: error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join(", "),
+        retryable: false,
+        details: {
+          validationErrors: error.errors,
+          receivedInputType: typeof input,
+          receivedInputKeys: inputKeys.length > 0 ? inputKeys : "not an object or empty",
+          receivedInput: input
+        },
+        remediation: "Check that all required parameters are provided. Required: appPath, environmentId. The tool received: " + (inputKeys.length > 0 ? inputKeys.join(", ") : typeof input)
+      };
+    }
+    if (error instanceof AppError) {
+      return {
+        type: "error",
+        kind: error.code.toLowerCase(),
+        message: error.message,
+        retryable: error.retryable,
+        details: error.details,
+        remediation: getRemediation7(error)
+      };
+    }
+    throw error;
+  }
+}
+__name(executePublishApp, "executePublishApp");
+function getRemediation7(error) {
+  if (error instanceof ValidationError) {
+    if (error.message.includes("not found")) {
+      return "Verify the app file path is correct and the file exists. Use an absolute path.";
+    }
+    if (error.message.includes(".app extension")) {
+      return "The file must have a .app extension. Verify you are pointing to the compiled app file.";
+    }
+    if (error.message.includes("not a file")) {
+      return "The path points to a directory, not a file. Provide the full path to the .app file.";
+    }
+    return "Check input parameters. Verify the app file exists and is accessible.";
+  }
+  if (error instanceof AuthError) {
+    if (error.details?.code === "NO_USERS") {
+      return "Create a NavUserPassword user for this environment via Demo Portal web interface.";
+    }
+    return "Verify BC user exists and has permissions. Check environment authentication settings.";
+  }
+  if (error instanceof ConflictError) {
+    return 'Schema conflict detected. Options:\n1. Use schemaUpdateMode="forcesync" to force synchronization\n2. Use schemaUpdateMode="recreate" for clean slate (CAUTION: Data loss!)\n3. Manually resolve schema conflicts in BC client';
+  }
+  switch (error.code) {
+    case "NOT_FOUND":
+      return "Environment not found. Use list_environments to see available environments.";
+    case "RATE_LIMIT":
+      return `Wait ${error.retryAfter ?? 60} seconds before retrying.`;
+    case "NETWORK_ERROR":
+      return "Check network connection and environment status:\n1. Verify environment is Running (use get_environment)\n2. Check network connectivity\n3. Verify environment URL is accessible";
+    default:
+      return "Check error details and try again. Consult BC documentation for specific error codes.";
+  }
+}
+__name(getRemediation7, "getRemediation");
+
 // src/tools/diagnoseTests.ts
 var DiagnoseTestsInputSchema = external_exports.object({
   environmentId: external_exports.string().describe("The ID of the environment to diagnose"),
@@ -19184,14 +19519,14 @@ async function executeListAvailableApps(demoPortalClient, input) {
         message: error.message,
         retryable: error.retryable,
         details: error.details,
-        remediation: getRemediation7(error)
+        remediation: getRemediation8(error)
       };
     }
     throw error;
   }
 }
 __name(executeListAvailableApps, "executeListAvailableApps");
-function getRemediation7(error) {
+function getRemediation8(error) {
   switch (error.code) {
     case "NOT_FOUND":
       return "Environment not found. Use list_environments to see available environments.";
@@ -19207,7 +19542,7 @@ function getRemediation7(error) {
       return "Review error details and try again.";
   }
 }
-__name(getRemediation7, "getRemediation");
+__name(getRemediation8, "getRemediation");
 
 // src/tools/installApp.ts
 var InstallAppInputSchema = external_exports.object({
@@ -19392,14 +19727,14 @@ async function executeInstallApp(demoPortalClient, input) {
         message: error.message,
         retryable: error.retryable,
         details: error.details,
-        remediation: getRemediation8(error)
+        remediation: getRemediation9(error)
       };
     }
     throw error;
   }
 }
 __name(executeInstallApp, "executeInstallApp");
-function getRemediation8(error) {
+function getRemediation9(error) {
   switch (error.code) {
     case "NOT_FOUND":
       if (error.message.includes("App")) {
@@ -19423,7 +19758,7 @@ function getRemediation8(error) {
       return "Review error details and try again.";
   }
 }
-__name(getRemediation8, "getRemediation");
+__name(getRemediation9, "getRemediation");
 
 // src/alFileScanner.ts
 import * as fs4 from "fs/promises";
@@ -26563,6 +26898,7 @@ async function main() {
           stopEnvironmentTool,
           runTestsToolDefinition,
           compileAndPublishToolDefinition,
+          publishAppToolDefinition,
           diagnosePublishToolDefinition,
           diagnoseTestsToolDefinition,
           checkTestAppStatusToolDefinition,
@@ -26609,6 +26945,12 @@ async function main() {
             break;
           case "compile_and_publish":
             result = await executeCompileAndPublish(
+              compilationService,
+              args2 || {}
+            );
+            break;
+          case "publish_app":
+            result = await executePublishApp(
               compilationService,
               args2 || {}
             );
