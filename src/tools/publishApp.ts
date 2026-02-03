@@ -186,8 +186,16 @@ export async function executePublishApp(
     console.error('[publish_app] Received input type:', typeof input);
     console.error('[publish_app] Received input:', JSON.stringify(input, null, 2));
 
+    // Create a plain object from input to ensure Zod validation works correctly
+    // MCP SDK arguments may have unusual prototype/property behavior
+    const plainInput = input && typeof input === 'object'
+      ? Object.fromEntries(Object.entries(input as Record<string, unknown>))
+      : input;
+
+    console.error('[publish_app] Plain input keys:', plainInput && typeof plainInput === 'object' ? Object.keys(plainInput) : 'not an object');
+
     // Validate input
-    const validated = PublishAppInputSchema.parse(input);
+    const validated = PublishAppInputSchema.parse(plainInput);
 
     // Execute publish
     const result = await compilationService.publishApp({

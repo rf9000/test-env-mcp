@@ -18630,7 +18630,11 @@ If URL looks wrong:
 };
 async function executeDiagnosePublish(compilationService, input) {
   try {
-    const validated = DiagnosePublishInputSchema.parse(input);
+    console.error("[diagnose_publish] Received input type:", typeof input);
+    console.error("[diagnose_publish] Received input:", JSON.stringify(input, null, 2));
+    const plainInput = input && typeof input === "object" ? Object.fromEntries(Object.entries(input)) : input;
+    console.error("[diagnose_publish] Plain input keys:", plainInput && typeof plainInput === "object" ? Object.keys(plainInput) : "not an object");
+    const validated = DiagnosePublishInputSchema.parse(plainInput);
     const result = await compilationService.diagnosePublish({
       workspacePath: validated.workspacePath,
       environmentId: validated.environmentId
@@ -18638,14 +18642,21 @@ async function executeDiagnosePublish(compilationService, input) {
     return result;
   } catch (error) {
     if (error instanceof external_exports.ZodError) {
+      const inputKeys = input && typeof input === "object" ? Object.keys(input) : [];
+      console.error("[diagnose_publish] Validation failed. Received keys:", inputKeys);
+      console.error("[diagnose_publish] Validation errors:", JSON.stringify(error.errors, null, 2));
       return {
         type: "error",
         kind: "validation_error",
         message: error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join(", "),
         retryable: false,
         details: {
-          validationErrors: error.errors
-        }
+          validationErrors: error.errors,
+          receivedInputType: typeof input,
+          receivedInputKeys: inputKeys.length > 0 ? inputKeys : "not an object or empty",
+          receivedInput: input
+        },
+        remediation: "Check that all required parameters are provided. Required: workspacePath, environmentId. The tool received: " + (inputKeys.length > 0 ? inputKeys.join(", ") : typeof input)
       };
     }
     if (error instanceof AppError) {
@@ -18801,7 +18812,9 @@ async function executePublishApp(compilationService, input) {
   try {
     console.error("[publish_app] Received input type:", typeof input);
     console.error("[publish_app] Received input:", JSON.stringify(input, null, 2));
-    const validated = PublishAppInputSchema.parse(input);
+    const plainInput = input && typeof input === "object" ? Object.fromEntries(Object.entries(input)) : input;
+    console.error("[publish_app] Plain input keys:", plainInput && typeof plainInput === "object" ? Object.keys(plainInput) : "not an object");
+    const validated = PublishAppInputSchema.parse(plainInput);
     const result = await compilationService.publishApp({
       appPath: validated.appPath,
       environmentId: validated.environmentId,
@@ -26807,7 +26820,7 @@ async function main() {
       try {
         await import(dep.name);
         console.error(`  \u2713 ${dep.display} installed`);
-      } catch (err) {
+      } catch (_err) {
         console.error(`  \u2717 ${dep.display} not found`);
       }
     }
