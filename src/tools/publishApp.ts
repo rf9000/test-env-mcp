@@ -196,18 +196,25 @@ export async function executePublishApp(
     console.error('[publish_app] Plain input type:', typeof plainInput);
     console.error('[publish_app] Plain input keys:', plainInput && typeof plainInput === 'object' ? Object.keys(plainInput as object) : 'not an object');
 
-    // Manual extraction to bypass any Zod issues
+    // Manual extraction - Zod validation has a bundling issue
     const inputObj = plainInput as Record<string, unknown>;
-    const manualAppPath = inputObj?.appPath;
-    const manualEnvId = inputObj?.environmentId;
+    const appPath = inputObj?.appPath;
+    const environmentId = inputObj?.environmentId;
+    const schemaUpdateMode = (inputObj?.schemaUpdateMode as 'synchronize' | 'recreate' | 'forcesync') ?? 'synchronize';
+    const dependencyPublishingOption = inputObj?.dependencyPublishingOption as 'default' | 'strict' | 'ignore' | undefined;
 
-    console.error('[publish_app] Manual extraction - appPath:', manualAppPath, 'type:', typeof manualAppPath);
-    console.error('[publish_app] Manual extraction - environmentId:', manualEnvId, 'type:', typeof manualEnvId);
+    console.error('[publish_app] Manual extraction - appPath:', appPath, 'type:', typeof appPath);
+    console.error('[publish_app] Manual extraction - environmentId:', environmentId, 'type:', typeof environmentId);
 
-    // Try Zod validation
-    console.error('[publish_app] About to call Zod parse...');
-    const validated = PublishAppInputSchema.parse(plainInput);
-    console.error('[publish_app] Zod parse succeeded!');
+    // Manual validation (bypassing Zod due to bundling issue)
+    if (typeof appPath !== 'string' || appPath.length === 0) {
+      throw new ValidationError('appPath is required and must be a non-empty string');
+    }
+    if (typeof environmentId !== 'string' || environmentId.length === 0) {
+      throw new ValidationError('environmentId is required and must be a non-empty string');
+    }
+
+    const validated = { appPath, environmentId, schemaUpdateMode, dependencyPublishingOption };
 
     // Execute publish
     const result = await compilationService.publishApp({

@@ -18633,11 +18633,18 @@ async function executeDiagnosePublish(compilationService, input) {
     console.error("[diagnose_publish] Received input type:", typeof input);
     console.error("[diagnose_publish] Received input:", JSON.stringify(input, null, 2));
     const plainInput = JSON.parse(JSON.stringify(input));
-    console.error("[diagnose_publish] Plain input type:", typeof plainInput);
-    console.error("[diagnose_publish] Plain input keys:", plainInput && typeof plainInput === "object" ? Object.keys(plainInput) : "not an object");
-    console.error("[diagnose_publish] Plain input environmentId:", plainInput?.environmentId);
-    console.error("[diagnose_publish] Plain input workspacePath:", plainInput?.workspacePath);
-    const validated = DiagnosePublishInputSchema.parse(plainInput);
+    const inputObj = plainInput;
+    const workspacePath = inputObj?.workspacePath;
+    const environmentId = inputObj?.environmentId;
+    console.error("[diagnose_publish] Manual extraction - workspacePath:", workspacePath, "type:", typeof workspacePath);
+    console.error("[diagnose_publish] Manual extraction - environmentId:", environmentId, "type:", typeof environmentId);
+    if (typeof workspacePath !== "string" || workspacePath.length === 0) {
+      throw new Error("workspacePath is required and must be a non-empty string");
+    }
+    if (typeof environmentId !== "string" || environmentId.length === 0) {
+      throw new Error("environmentId is required and must be a non-empty string");
+    }
+    const validated = { workspacePath, environmentId };
     const result = await compilationService.diagnosePublish({
       workspacePath: validated.workspacePath,
       environmentId: validated.environmentId
@@ -18820,13 +18827,19 @@ async function executePublishApp(compilationService, input) {
     console.error("[publish_app] Plain input type:", typeof plainInput);
     console.error("[publish_app] Plain input keys:", plainInput && typeof plainInput === "object" ? Object.keys(plainInput) : "not an object");
     const inputObj = plainInput;
-    const manualAppPath = inputObj?.appPath;
-    const manualEnvId = inputObj?.environmentId;
-    console.error("[publish_app] Manual extraction - appPath:", manualAppPath, "type:", typeof manualAppPath);
-    console.error("[publish_app] Manual extraction - environmentId:", manualEnvId, "type:", typeof manualEnvId);
-    console.error("[publish_app] About to call Zod parse...");
-    const validated = PublishAppInputSchema.parse(plainInput);
-    console.error("[publish_app] Zod parse succeeded!");
+    const appPath = inputObj?.appPath;
+    const environmentId = inputObj?.environmentId;
+    const schemaUpdateMode = inputObj?.schemaUpdateMode ?? "synchronize";
+    const dependencyPublishingOption = inputObj?.dependencyPublishingOption;
+    console.error("[publish_app] Manual extraction - appPath:", appPath, "type:", typeof appPath);
+    console.error("[publish_app] Manual extraction - environmentId:", environmentId, "type:", typeof environmentId);
+    if (typeof appPath !== "string" || appPath.length === 0) {
+      throw new ValidationError("appPath is required and must be a non-empty string");
+    }
+    if (typeof environmentId !== "string" || environmentId.length === 0) {
+      throw new ValidationError("environmentId is required and must be a non-empty string");
+    }
+    const validated = { appPath, environmentId, schemaUpdateMode, dependencyPublishingOption };
     const result = await compilationService.publishApp({
       appPath: validated.appPath,
       environmentId: validated.environmentId,

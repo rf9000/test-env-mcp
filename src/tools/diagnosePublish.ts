@@ -151,13 +151,23 @@ export async function executeDiagnosePublish(
     // MCP SDK arguments may have unusual prototype/property/getter behavior
     const plainInput = JSON.parse(JSON.stringify(input));
 
-    console.error('[diagnose_publish] Plain input type:', typeof plainInput);
-    console.error('[diagnose_publish] Plain input keys:', plainInput && typeof plainInput === 'object' ? Object.keys(plainInput) : 'not an object');
-    console.error('[diagnose_publish] Plain input environmentId:', plainInput?.environmentId);
-    console.error('[diagnose_publish] Plain input workspacePath:', plainInput?.workspacePath);
+    // Manual extraction - Zod validation has a bundling issue
+    const inputObj = plainInput as Record<string, unknown>;
+    const workspacePath = inputObj?.workspacePath;
+    const environmentId = inputObj?.environmentId;
 
-    // Validate input
-    const validated = DiagnosePublishInputSchema.parse(plainInput);
+    console.error('[diagnose_publish] Manual extraction - workspacePath:', workspacePath, 'type:', typeof workspacePath);
+    console.error('[diagnose_publish] Manual extraction - environmentId:', environmentId, 'type:', typeof environmentId);
+
+    // Manual validation (bypassing Zod due to bundling issue)
+    if (typeof workspacePath !== 'string' || workspacePath.length === 0) {
+      throw new Error('workspacePath is required and must be a non-empty string');
+    }
+    if (typeof environmentId !== 'string' || environmentId.length === 0) {
+      throw new Error('environmentId is required and must be a non-empty string');
+    }
+
+    const validated = { workspacePath, environmentId };
 
     // Execute diagnostics
     const result = await compilationService.diagnosePublish({
