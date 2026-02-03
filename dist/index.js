@@ -18632,8 +18632,11 @@ async function executeDiagnosePublish(compilationService, input) {
   try {
     console.error("[diagnose_publish] Received input type:", typeof input);
     console.error("[diagnose_publish] Received input:", JSON.stringify(input, null, 2));
-    const plainInput = input && typeof input === "object" ? Object.fromEntries(Object.entries(input)) : input;
+    const plainInput = JSON.parse(JSON.stringify(input));
+    console.error("[diagnose_publish] Plain input type:", typeof plainInput);
     console.error("[diagnose_publish] Plain input keys:", plainInput && typeof plainInput === "object" ? Object.keys(plainInput) : "not an object");
+    console.error("[diagnose_publish] Plain input environmentId:", plainInput?.environmentId);
+    console.error("[diagnose_publish] Plain input workspacePath:", plainInput?.workspacePath);
     const validated = DiagnosePublishInputSchema.parse(plainInput);
     const result = await compilationService.diagnosePublish({
       workspacePath: validated.workspacePath,
@@ -18812,8 +18815,11 @@ async function executePublishApp(compilationService, input) {
   try {
     console.error("[publish_app] Received input type:", typeof input);
     console.error("[publish_app] Received input:", JSON.stringify(input, null, 2));
-    const plainInput = input && typeof input === "object" ? Object.fromEntries(Object.entries(input)) : input;
+    const plainInput = JSON.parse(JSON.stringify(input));
+    console.error("[publish_app] Plain input type:", typeof plainInput);
     console.error("[publish_app] Plain input keys:", plainInput && typeof plainInput === "object" ? Object.keys(plainInput) : "not an object");
+    console.error("[publish_app] Plain input environmentId:", plainInput?.environmentId);
+    console.error("[publish_app] Plain input appPath:", plainInput?.appPath);
     const validated = PublishAppInputSchema.parse(plainInput);
     const result = await compilationService.publishApp({
       appPath: validated.appPath,

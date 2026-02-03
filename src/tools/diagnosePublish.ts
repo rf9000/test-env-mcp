@@ -147,13 +147,14 @@ export async function executeDiagnosePublish(
     console.error('[diagnose_publish] Received input type:', typeof input);
     console.error('[diagnose_publish] Received input:', JSON.stringify(input, null, 2));
 
-    // Create a plain object from input to ensure Zod validation works correctly
-    // MCP SDK arguments may have unusual prototype/property behavior
-    const plainInput = input && typeof input === 'object'
-      ? Object.fromEntries(Object.entries(input as Record<string, unknown>))
-      : input;
+    // Force a complete deep clone via JSON serialization to ensure Zod validation works
+    // MCP SDK arguments may have unusual prototype/property/getter behavior
+    const plainInput = JSON.parse(JSON.stringify(input));
 
+    console.error('[diagnose_publish] Plain input type:', typeof plainInput);
     console.error('[diagnose_publish] Plain input keys:', plainInput && typeof plainInput === 'object' ? Object.keys(plainInput) : 'not an object');
+    console.error('[diagnose_publish] Plain input environmentId:', plainInput?.environmentId);
+    console.error('[diagnose_publish] Plain input workspacePath:', plainInput?.workspacePath);
 
     // Validate input
     const validated = DiagnosePublishInputSchema.parse(plainInput);

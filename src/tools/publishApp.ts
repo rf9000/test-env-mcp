@@ -186,13 +186,14 @@ export async function executePublishApp(
     console.error('[publish_app] Received input type:', typeof input);
     console.error('[publish_app] Received input:', JSON.stringify(input, null, 2));
 
-    // Create a plain object from input to ensure Zod validation works correctly
-    // MCP SDK arguments may have unusual prototype/property behavior
-    const plainInput = input && typeof input === 'object'
-      ? Object.fromEntries(Object.entries(input as Record<string, unknown>))
-      : input;
+    // Force a complete deep clone via JSON serialization to ensure Zod validation works
+    // MCP SDK arguments may have unusual prototype/property/getter behavior
+    const plainInput = JSON.parse(JSON.stringify(input));
 
+    console.error('[publish_app] Plain input type:', typeof plainInput);
     console.error('[publish_app] Plain input keys:', plainInput && typeof plainInput === 'object' ? Object.keys(plainInput) : 'not an object');
+    console.error('[publish_app] Plain input environmentId:', plainInput?.environmentId);
+    console.error('[publish_app] Plain input appPath:', plainInput?.appPath);
 
     // Validate input
     const validated = PublishAppInputSchema.parse(plainInput);
