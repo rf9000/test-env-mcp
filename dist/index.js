@@ -18526,10 +18526,6 @@ function getRemediation6(error) {
 __name(getRemediation6, "getRemediation");
 
 // src/tools/diagnosePublish.ts
-var DiagnosePublishInputSchema = external_exports.object({
-  workspacePath: external_exports.string().min(1, "workspacePath is required").describe("Absolute path to AL project workspace containing app.json"),
-  environmentId: external_exports.string().min(1, "environmentId is required").describe("Environment ID to diagnose publishing for (from list_environments)")
-}).strict();
 var diagnosePublishToolDefinition = {
   name: "diagnose_publish",
   description: `Diagnose publishing configuration and connectivity without actually publishing.
@@ -18630,45 +18626,21 @@ If URL looks wrong:
 };
 async function executeDiagnosePublish(compilationService, input) {
   try {
-    console.error("[diagnose_publish] Received input type:", typeof input);
-    console.error("[diagnose_publish] Received input:", JSON.stringify(input, null, 2));
-    const plainInput = JSON.parse(JSON.stringify(input));
-    const inputObj = plainInput;
+    const inputObj = input;
     const workspacePath = inputObj?.workspacePath;
     const environmentId = inputObj?.environmentId;
-    console.error("[diagnose_publish] Manual extraction - workspacePath:", workspacePath, "type:", typeof workspacePath);
-    console.error("[diagnose_publish] Manual extraction - environmentId:", environmentId, "type:", typeof environmentId);
     if (typeof workspacePath !== "string" || workspacePath.length === 0) {
-      throw new Error("workspacePath is required and must be a non-empty string");
+      throw new ValidationError("workspacePath is required and must be a non-empty string");
     }
     if (typeof environmentId !== "string" || environmentId.length === 0) {
-      throw new Error("environmentId is required and must be a non-empty string");
+      throw new ValidationError("environmentId is required and must be a non-empty string");
     }
-    const validated = { workspacePath, environmentId };
     const result = await compilationService.diagnosePublish({
-      workspacePath: validated.workspacePath,
-      environmentId: validated.environmentId
+      workspacePath,
+      environmentId
     });
     return result;
   } catch (error) {
-    if (error instanceof external_exports.ZodError) {
-      const inputKeys = input && typeof input === "object" ? Object.keys(input) : [];
-      console.error("[diagnose_publish] Validation failed. Received keys:", inputKeys);
-      console.error("[diagnose_publish] Validation errors:", JSON.stringify(error.errors, null, 2));
-      return {
-        type: "error",
-        kind: "validation_error",
-        message: error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join(", "),
-        retryable: false,
-        details: {
-          validationErrors: error.errors,
-          receivedInputType: typeof input,
-          receivedInputKeys: inputKeys.length > 0 ? inputKeys : "not an object or empty",
-          receivedInput: input
-        },
-        remediation: "Check that all required parameters are provided. Required: workspacePath, environmentId. The tool received: " + (inputKeys.length > 0 ? inputKeys.join(", ") : typeof input)
-      };
-    }
     if (error instanceof AppError) {
       return {
         type: "error",
@@ -18684,16 +18656,6 @@ async function executeDiagnosePublish(compilationService, input) {
 __name(executeDiagnosePublish, "executeDiagnosePublish");
 
 // src/tools/publishApp.ts
-var PublishAppInputSchema = external_exports.object({
-  appPath: external_exports.string().min(1, "appPath is required").describe("Absolute path to the .app file to publish"),
-  environmentId: external_exports.string().min(1, "environmentId is required").describe("Environment ID to publish to (from list_environments)"),
-  schemaUpdateMode: external_exports.enum(["synchronize", "recreate", "forcesync"]).optional().default("synchronize").describe(
-    "Schema update mode: synchronize (default) = safe update, recreate = drop+recreate tables, forcesync = force synchronization"
-  ),
-  dependencyPublishingOption: external_exports.enum(["default", "strict", "ignore"]).optional().describe(
-    "Dependency publishing option: default = standard handling, strict = enforce all dependencies, ignore = skip missing dependencies"
-  )
-}).strict();
 var publishAppToolDefinition = {
   name: "publish_app",
   description: `Publish an existing .app file to Business Central environment without compilation.
@@ -18819,60 +18781,26 @@ Example 3: Ignore missing dependencies
   }
 };
 async function executePublishApp(compilationService, input) {
-  let plainInput;
   try {
-    console.error("[publish_app] Received input type:", typeof input);
-    console.error("[publish_app] Received input:", JSON.stringify(input, null, 2));
-    plainInput = JSON.parse(JSON.stringify(input));
-    console.error("[publish_app] Plain input type:", typeof plainInput);
-    console.error("[publish_app] Plain input keys:", plainInput && typeof plainInput === "object" ? Object.keys(plainInput) : "not an object");
-    const inputObj = plainInput;
+    const inputObj = input;
     const appPath = inputObj?.appPath;
     const environmentId = inputObj?.environmentId;
     const schemaUpdateMode = inputObj?.schemaUpdateMode ?? "synchronize";
     const dependencyPublishingOption = inputObj?.dependencyPublishingOption;
-    console.error("[publish_app] Manual extraction - appPath:", appPath, "type:", typeof appPath);
-    console.error("[publish_app] Manual extraction - environmentId:", environmentId, "type:", typeof environmentId);
     if (typeof appPath !== "string" || appPath.length === 0) {
       throw new ValidationError("appPath is required and must be a non-empty string");
     }
     if (typeof environmentId !== "string" || environmentId.length === 0) {
       throw new ValidationError("environmentId is required and must be a non-empty string");
     }
-    const validated = { appPath, environmentId, schemaUpdateMode, dependencyPublishingOption };
     const result = await compilationService.publishApp({
-      appPath: validated.appPath,
-      environmentId: validated.environmentId,
-      schemaUpdateMode: validated.schemaUpdateMode,
-      dependencyPublishingOption: validated.dependencyPublishingOption
+      appPath,
+      environmentId,
+      schemaUpdateMode,
+      dependencyPublishingOption
     });
     return result;
   } catch (error) {
-    if (error instanceof external_exports.ZodError) {
-      const inputKeys = input && typeof input === "object" ? Object.keys(input) : [];
-      const plainKeys = plainInput && typeof plainInput === "object" ? Object.keys(plainInput) : [];
-      console.error("[publish_app] Validation failed.");
-      console.error("[publish_app] Original input keys:", inputKeys);
-      console.error("[publish_app] Plain input keys:", plainKeys);
-      console.error("[publish_app] Plain input value:", JSON.stringify(plainInput, null, 2));
-      console.error("[publish_app] Validation errors:", JSON.stringify(error.errors, null, 2));
-      return {
-        type: "error",
-        kind: "validation_error",
-        message: error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join(", "),
-        retryable: false,
-        details: {
-          validationErrors: error.errors,
-          receivedInputType: typeof input,
-          receivedInputKeys: inputKeys.length > 0 ? inputKeys : "not an object or empty",
-          receivedInput: input,
-          plainInputType: typeof plainInput,
-          plainInputKeys: plainKeys.length > 0 ? plainKeys : "not an object or empty",
-          plainInput
-        },
-        remediation: "Check that all required parameters are provided. Required: appPath, environmentId. The tool received: " + (inputKeys.length > 0 ? inputKeys.join(", ") : typeof input)
-      };
-    }
     if (error instanceof AppError) {
       return {
         type: "error",
@@ -26926,7 +26854,7 @@ async function main() {
     const server = new Server(
       {
         name: "continia-environment-mcp",
-        version: "0.1.0"
+        version: "0.2.1"
       },
       {
         capabilities: {
