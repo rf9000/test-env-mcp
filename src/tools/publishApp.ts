@@ -5,40 +5,18 @@
  * Useful for apps already compiled by VS Code, CI/CD pipelines, or other tools.
  */
 
-import { z } from 'zod';
 import type { CompilationService } from '@/services/compilationService.js';
 import { AppError, ValidationError, AuthError, ConflictError } from '@/errors/errors.js';
 
 /**
- * Zod schema for publish_app input validation
+ * Input type for publish_app
  */
-export const PublishAppInputSchema = z
-  .object({
-    appPath: z
-      .string()
-      .min(1, 'appPath is required')
-      .describe('Absolute path to the .app file to publish'),
-    environmentId: z
-      .string()
-      .min(1, 'environmentId is required')
-      .describe('Environment ID to publish to (from list_environments)'),
-    schemaUpdateMode: z
-      .enum(['synchronize', 'recreate', 'forcesync'])
-      .optional()
-      .default('synchronize')
-      .describe(
-        'Schema update mode: synchronize (default) = safe update, recreate = drop+recreate tables, forcesync = force synchronization'
-      ),
-    dependencyPublishingOption: z
-      .enum(['default', 'strict', 'ignore'])
-      .optional()
-      .describe(
-        'Dependency publishing option: default = standard handling, strict = enforce all dependencies, ignore = skip missing dependencies'
-      )
-  })
-  .strict();
-
-export type PublishAppInput = z.infer<typeof PublishAppInputSchema>;
+export interface PublishAppInput {
+  appPath: string;
+  environmentId: string;
+  schemaUpdateMode?: 'synchronize' | 'recreate' | 'forcesync';
+  dependencyPublishingOption?: 'default' | 'strict' | 'ignore';
+}
 
 /**
  * MCP Tool Definition for publish_app
@@ -181,32 +159,15 @@ export async function executePublishApp(
   compilationService: CompilationService,
   input: unknown
 ): Promise<unknown> {
-  // Force a complete deep clone via JSON serialization to ensure Zod validation works
-  // MCP SDK arguments may have unusual prototype/property/getter behavior
-  // Define outside try block so it's accessible in catch
-  let plainInput: unknown;
-
   try {
-    // Debug: Log received input to stderr (visible in MCP server logs)
-    console.error('[publish_app] Received input type:', typeof input);
-    console.error('[publish_app] Received input:', JSON.stringify(input, null, 2));
-
-    plainInput = JSON.parse(JSON.stringify(input));
-
-    console.error('[publish_app] Plain input type:', typeof plainInput);
-    console.error('[publish_app] Plain input keys:', plainInput && typeof plainInput === 'object' ? Object.keys(plainInput as object) : 'not an object');
-
-    // Manual extraction - Zod validation has a bundling issue
-    const inputObj = plainInput as Record<string, unknown>;
+    // Extract and validate input
+    const inputObj = input as Record<string, unknown>;
     const appPath = inputObj?.appPath;
     const environmentId = inputObj?.environmentId;
     const schemaUpdateMode = (inputObj?.schemaUpdateMode as 'synchronize' | 'recreate' | 'forcesync') ?? 'synchronize';
     const dependencyPublishingOption = inputObj?.dependencyPublishingOption as 'default' | 'strict' | 'ignore' | undefined;
 
-    console.error('[publish_app] Manual extraction - appPath:', appPath, 'type:', typeof appPath);
-    console.error('[publish_app] Manual extraction - environmentId:', environmentId, 'type:', typeof environmentId);
-
-    // Manual validation (bypassing Zod due to bundling issue)
+    // Validate required fields
     if (typeof appPath !== 'string' || appPath.length === 0) {
       throw new ValidationError('appPath is required and must be a non-empty string');
     }
@@ -214,47 +175,16 @@ export async function executePublishApp(
       throw new ValidationError('environmentId is required and must be a non-empty string');
     }
 
-    const validated = { appPath, environmentId, schemaUpdateMode, dependencyPublishingOption };
-
     // Execute publish
     const result = await compilationService.publishApp({
-      appPath: validated.appPath,
-      environmentId: validated.environmentId,
-      schemaUpdateMode: validated.schemaUpdateMode,
-      dependencyPublishingOption: validated.dependencyPublishingOption
+      appPath,
+      environmentId,
+      schemaUpdateMode,
+      dependencyPublishingOption
     });
 
     return result;
   } catch (error) {
-    // Handle Zod validation errors with detailed debugging
-    if (error instanceof z.ZodError) {
-      const inputKeys = input && typeof input === 'object' ? Object.keys(input) : [];
-      const plainKeys = plainInput && typeof plainInput === 'object' ? Object.keys(plainInput as object) : [];
-      console.error('[publish_app] Validation failed.');
-      console.error('[publish_app] Original input keys:', inputKeys);
-      console.error('[publish_app] Plain input keys:', plainKeys);
-      console.error('[publish_app] Plain input value:', JSON.stringify(plainInput, null, 2));
-      console.error('[publish_app] Validation errors:', JSON.stringify(error.errors, null, 2));
-
-      return {
-        type: 'error',
-        kind: 'validation_error',
-        message: error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', '),
-        retryable: false,
-        details: {
-          validationErrors: error.errors,
-          receivedInputType: typeof input,
-          receivedInputKeys: inputKeys.length > 0 ? inputKeys : 'not an object or empty',
-          receivedInput: input,
-          plainInputType: typeof plainInput,
-          plainInputKeys: plainKeys.length > 0 ? plainKeys : 'not an object or empty',
-          plainInput: plainInput
-        },
-        remediation: 'Check that all required parameters are provided. Required: appPath, environmentId. ' +
-          'The tool received: ' + (inputKeys.length > 0 ? inputKeys.join(', ') : typeof input)
-      };
-    }
-
     if (error instanceof AppError) {
       return {
         type: 'error',

@@ -7,27 +7,16 @@
  * Useful for debugging publish failures.
  */
 
-import { z } from 'zod';
 import type { CompilationService } from '@/services/compilationService.js';
-import { AppError } from '@/errors/errors.js';
+import { AppError, ValidationError } from '@/errors/errors.js';
 
 /**
- * Zod schema for diagnose_publish input validation
+ * Input type for diagnose_publish
  */
-export const DiagnosePublishInputSchema = z
-  .object({
-    workspacePath: z
-      .string()
-      .min(1, 'workspacePath is required')
-      .describe('Absolute path to AL project workspace containing app.json'),
-    environmentId: z
-      .string()
-      .min(1, 'environmentId is required')
-      .describe('Environment ID to diagnose publishing for (from list_environments)')
-  })
-  .strict();
-
-export type DiagnosePublishInput = z.infer<typeof DiagnosePublishInputSchema>;
+export interface DiagnosePublishInput {
+  workspacePath: string;
+  environmentId: string;
+}
 
 /**
  * MCP Tool Definition for diagnose_publish
@@ -143,62 +132,27 @@ export async function executeDiagnosePublish(
   input: unknown
 ): Promise<unknown> {
   try {
-    // Debug: Log received input to stderr (visible in MCP server logs)
-    console.error('[diagnose_publish] Received input type:', typeof input);
-    console.error('[diagnose_publish] Received input:', JSON.stringify(input, null, 2));
-
-    // Force a complete deep clone via JSON serialization to ensure Zod validation works
-    // MCP SDK arguments may have unusual prototype/property/getter behavior
-    const plainInput = JSON.parse(JSON.stringify(input));
-
-    // Manual extraction - Zod validation has a bundling issue
-    const inputObj = plainInput as Record<string, unknown>;
+    // Extract and validate input
+    const inputObj = input as Record<string, unknown>;
     const workspacePath = inputObj?.workspacePath;
     const environmentId = inputObj?.environmentId;
 
-    console.error('[diagnose_publish] Manual extraction - workspacePath:', workspacePath, 'type:', typeof workspacePath);
-    console.error('[diagnose_publish] Manual extraction - environmentId:', environmentId, 'type:', typeof environmentId);
-
-    // Manual validation (bypassing Zod due to bundling issue)
+    // Validate required fields
     if (typeof workspacePath !== 'string' || workspacePath.length === 0) {
-      throw new Error('workspacePath is required and must be a non-empty string');
+      throw new ValidationError('workspacePath is required and must be a non-empty string');
     }
     if (typeof environmentId !== 'string' || environmentId.length === 0) {
-      throw new Error('environmentId is required and must be a non-empty string');
+      throw new ValidationError('environmentId is required and must be a non-empty string');
     }
-
-    const validated = { workspacePath, environmentId };
 
     // Execute diagnostics
     const result = await compilationService.diagnosePublish({
-      workspacePath: validated.workspacePath,
-      environmentId: validated.environmentId
+      workspacePath,
+      environmentId
     });
 
     return result;
   } catch (error) {
-    // Handle Zod validation errors with detailed debugging
-    if (error instanceof z.ZodError) {
-      const inputKeys = input && typeof input === 'object' ? Object.keys(input) : [];
-      console.error('[diagnose_publish] Validation failed. Received keys:', inputKeys);
-      console.error('[diagnose_publish] Validation errors:', JSON.stringify(error.errors, null, 2));
-
-      return {
-        type: 'error',
-        kind: 'validation_error',
-        message: error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', '),
-        retryable: false,
-        details: {
-          validationErrors: error.errors,
-          receivedInputType: typeof input,
-          receivedInputKeys: inputKeys.length > 0 ? inputKeys : 'not an object or empty',
-          receivedInput: input
-        },
-        remediation: 'Check that all required parameters are provided. Required: workspacePath, environmentId. ' +
-          'The tool received: ' + (inputKeys.length > 0 ? inputKeys.join(', ') : typeof input)
-      };
-    }
-
     if (error instanceof AppError) {
       return {
         type: 'error',
